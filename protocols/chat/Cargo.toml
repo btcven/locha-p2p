@@ -1,0 +1,10 @@
+[package]
+name = "locha-p2p-chat"
+version = "0.1.0"
+authors = ["Jean Pierre Dudey <me@jeandudey.tech>"]
+edition = "2018"
+
+[dependencies]
+libp2p-core = "0.20"
+libp2p-swarm = "0.20"
+void = "1"
