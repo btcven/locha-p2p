@@ -8,4 +8,9 @@ edition = "2018"
 members = ["protocols/chat"]
 
 [dependencies]
+async-std = { version = "1", features = ["attributes"] }
+libp2p = "0.23"
 locha-p2p-chat = { version = "0.1", path = "protocols/chat" }
+futures = "0.3"
+env_logger = "0.7"
+async-trait = "0.1"
