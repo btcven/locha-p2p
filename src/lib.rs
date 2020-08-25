@@ -18,6 +18,8 @@
 //! with the Locha P2P Chat.
 
 #![recursion_limit = "1024"]
+#![doc(html_logo_url = "https://locha.io/i/128.png")]
+#![doc(html_favicon_url = "https://locha.io/i/128.png")]
 
 mod chat_service;
 mod config;
