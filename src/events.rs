@@ -12,20 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Locha P2P
-//!
-//! This library contains the necessary code to set up a node that works
-//! with the Locha P2P Chat.
+use libp2p::Multiaddr;
 
-#![recursion_limit = "1024"]
+/// Chat service events
+pub trait ChatServiceEvents: Send {
+    /// New message received
+    fn on_new_message(&mut self, message: String);
 
-mod chat_service;
-mod config;
-mod error;
-mod events;
-mod sync_start_cond;
-
-pub use self::chat_service::{ChatService, CHAT_SERVICE_GOSSIP_PROTCOL_NAME};
-pub use self::config::ChatServiceConfig;
-pub use self::error::Error;
-pub use self::events::ChatServiceEvents;
+    /// New listening address
+    ///
+    /// This informs that the Chat Service is listening on the provided
+    /// Multiaddress.
+    fn on_new_listen_addr(&mut self, multiaddr: Multiaddr);
+}
