@@ -16,7 +16,7 @@ use std::io::{Read, Write};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use clap::{load_yaml, value_t, values_t, App};
+use clap::{load_yaml, value_t, values_t, App, ArgMatches};
 
 use futures::prelude::*;
 use futures::select;
@@ -33,7 +33,7 @@ use serde_derive::{Deserialize, Serialize};
 
 use locha_p2p::{ChatService, ChatServiceConfig, ChatServiceEvents};
 
-use log::{error, info, trace};
+use log::{info, trace};
 
 struct EventsHandler {
     channel: Sender<Message>,
@@ -127,9 +127,37 @@ struct Message {
     pub msg_id: String,
 }
 
+/// Command line arguments
+#[derive(Debug)]
+pub struct Arguments {
+    pub listen_addr: Multiaddr,
+    pub dials: Vec<Multiaddr>,
+    pub echo: bool,
+}
+
+impl Arguments {
+    pub fn from_matches(matches: &ArgMatches) -> Arguments {
+        let listen_addr = value_t!(matches.value_of("listen-addr"), Multiaddr)
+            .unwrap_or_else(|e| e.exit());
+        let dials = match values_t!(matches.values_of("dial"), Multiaddr) {
+            Ok(d) => d,
+            Err(e) if e.kind == clap::ErrorKind::ArgumentNotFound => vec![],
+            Err(e) => e.exit(),
+        };
+        let echo = matches.is_present("echo");
+
+        Arguments {
+            listen_addr,
+            dials,
+            echo,
+        }
+    }
+}
+
 fn main() {
     let cli_yaml = load_yaml!("cli.yml");
     let matches = App::from_yaml(cli_yaml).get_matches();
+    let arguments = Arguments::from_matches(&matches);
 
     let listen_addr = value_t!(matches.value_of("listen-addr"), Multiaddr)
         .unwrap_or_else(|e| e.exit());
@@ -168,7 +196,7 @@ fn main() {
     let (sender, receiver) = channel::<Message>(10);
     let events_handler = EventsHandler {
         channel: sender,
-        echo: matches.is_present("echo"),
+        echo: arguments.echo,
     };
 
     chat_service
@@ -176,18 +204,8 @@ fn main() {
         .expect("couldn't start chat service");
 
     // Reach out to another node if specified
-    let dials = values_t!(matches.values_of("dial"), Multiaddr);
-    match dials {
-        Ok(dials) => {
-            for to_dial in dials {
-                chat_service.dial(to_dial).expect("couldn't dial peer");
-            }
-        }
-        Err(e) if e.kind == clap::ErrorKind::ArgumentNotFound => (),
-        Err(e) => {
-            error!("falied to parse address to dial: {}", e);
-            return;
-        }
+    for to_dial in arguments.dials {
+        chat_service.dial(to_dial).expect("couldn't dial peer");
     }
 
     let input = io::stdin();
