@@ -132,7 +132,7 @@ struct Message {
 
 fn main() {
     env_logger::Builder::new()
-        .level_filter(log::LevelFiler::Info)
+        .filter_level(log::LevelFilter::Info)
         .init();
 
     let cli_yaml = load_yaml!("cli.yml");
