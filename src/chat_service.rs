@@ -38,6 +38,7 @@ use log::{error, info, trace, warn};
 use crate::config::ChatServiceConfig;
 use crate::error::Error;
 use crate::events::ChatServiceEvents;
+use crate::identity::Identity;
 use crate::sync_start_cond::{StartStatus, SyncStartCond};
 
 /// Gossipsub protocol name for Locha P2P Chat
@@ -47,8 +48,7 @@ pub struct ChatService {
     handle: Option<task::JoinHandle<Result<(), Error>>>,
     sender: Option<Sender<ChatAction>>,
 
-    keypair: Option<Keypair>,
-    peer_id: Option<PeerId>,
+    identity: Option<Identity>,
 }
 
 impl ChatService {
@@ -59,8 +59,7 @@ impl ChatService {
             handle: None,
             sender: None,
 
-            keypair: None,
-            peer_id: None,
+            identity: None,
         }
     }
 
@@ -68,16 +67,9 @@ impl ChatService {
         self.handle.is_some() && self.sender.is_some()
     }
 
-    pub fn peer_id(&self) -> &PeerId {
+    pub fn identity(&self) -> &Identity {
         &self
-            .peer_id
-            .as_ref()
-            .expect("chat service has not been started")
-    }
-
-    pub fn keypair(&self) -> &Keypair {
-        &self
-            .keypair
+            .identity
             .as_ref()
             .expect("chat service has not been started")
     }
@@ -96,8 +88,7 @@ impl ChatService {
 
         let (sender, receiver) = channel::<ChatAction>(config.channel_cap);
 
-        let peer_id = config.peer_id.clone();
-        let keypair = config.keypair.clone();
+        let identity = config.identity.clone();
 
         let cond = SyncStartCond::new();
         let handle = task::spawn({
@@ -114,8 +105,7 @@ impl ChatService {
         self.handle = Some(handle);
         self.sender = Some(sender);
 
-        self.peer_id = Some(peer_id);
-        self.keypair = Some(keypair);
+        self.identity = Some(identity);
 
         Ok(())
     }
@@ -243,7 +233,7 @@ impl ChatService {
         config: ChatServiceConfig,
         mut events_handler: Box<dyn ChatServiceEvents>,
     ) -> Result<(), Error> {
-        let transport = Self::build_transport(config.keypair.clone())?;
+        let transport = Self::build_transport(config.identity.keypair())?;
 
         let gossipsub_config = GossipsubConfigBuilder::new()
             .protocol_id(CHAT_SERVICE_GOSSIP_PROTCOL_NAME)
@@ -256,13 +246,12 @@ impl ChatService {
         let topic = Topic::new("locha-p2p-testnet".into());
 
         let mut gossipsub = Gossipsub::new(
-            MessageAuthenticity::Signed(config.keypair),
+            MessageAuthenticity::Signed(config.identity.keypair()),
             gossipsub_config,
         );
         gossipsub.subscribe(topic.clone());
 
-        let mut swarm =
-            Swarm::new(transport, gossipsub, config.peer_id.clone());
+        let mut swarm = Swarm::new(transport, gossipsub, config.identity.id());
         match Swarm::listen_on(&mut swarm, config.listen_addr.clone()) {
             Ok(_) => (),
             Err(e) => {

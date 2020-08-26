@@ -12,30 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt;
+use crate::identity::Identity;
+use libp2p::Multiaddr;
 
-use libp2p::identity::{secp256k1, Keypair};
-use libp2p::{Multiaddr, PeerId};
-
+#[derive(Debug)]
 pub struct ChatServiceConfig {
-    pub secret_key: secp256k1::SecretKey,
+    pub identity: Identity,
     pub listen_addr: Multiaddr,
     pub channel_cap: usize,
     pub heartbeat_interval: u64,
-
-    pub keypair: Keypair,
-    pub peer_id: PeerId,
-}
-
-impl fmt::Debug for ChatServiceConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ChatServiceConfig")
-            .field("secret_key", &"SecretKey(...)".to_string())
-            .field("listen_addr", &self.listen_addr)
-            .field("channel_cap", &self.channel_cap)
-            .field("heartbeat_interval", &self.heartbeat_interval)
-            .field("keypair", &"Keypair(...)".to_string())
-            .field("peer_id", &self.peer_id)
-            .finish()
-    }
 }
