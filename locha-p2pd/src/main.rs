@@ -1,4 +1,4 @@
-// Copyright 2020 Locha Inc
+// Copyright 2020 Bitcoin Venezuela and Locha Mesh Developers
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io::{Read, Write};
+use std::path::Path;
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use clap::{load_yaml, value_t, values_t, App, ArgMatches};
+use clap::{load_yaml, App};
 
 use futures::prelude::*;
 use futures::select;
@@ -25,15 +25,18 @@ use async_std::io;
 use async_std::sync::{channel, Sender};
 use async_std::task;
 
-use libp2p::identity::{secp256k1, Keypair};
 use libp2p::multihash::{MultihashDigest, Sha2_256};
-use libp2p::{Multiaddr, PeerId};
+use libp2p::Multiaddr;
 
 use serde_derive::{Deserialize, Serialize};
 
+use locha_p2p::Identity;
 use locha_p2p::{ChatService, ChatServiceConfig, ChatServiceEvents};
 
 use log::{info, trace};
+
+mod arguments;
+use arguments::Arguments;
 
 struct EventsHandler {
     channel: Sender<Message>,
@@ -127,34 +130,11 @@ struct Message {
     pub msg_id: String,
 }
 
-/// Command line arguments
-#[derive(Debug)]
-pub struct Arguments {
-    pub listen_addr: Multiaddr,
-    pub dials: Vec<Multiaddr>,
-    pub echo: bool,
-}
-
-impl Arguments {
-    pub fn from_matches(matches: &ArgMatches) -> Arguments {
-        let listen_addr = value_t!(matches.value_of("listen-addr"), Multiaddr)
-            .unwrap_or_else(|e| e.exit());
-        let dials = match values_t!(matches.values_of("dial"), Multiaddr) {
-            Ok(d) => d,
-            Err(e) if e.kind == clap::ErrorKind::ArgumentNotFound => vec![],
-            Err(e) => e.exit(),
-        };
-        let echo = matches.is_present("echo");
-
-        Arguments {
-            listen_addr,
-            dials,
-            echo,
-        }
-    }
-}
-
 fn main() {
+    env_logger::Builder::new()
+        .level_filter(log::LevelFiler::Info)
+        .init();
+
     let cli_yaml = load_yaml!("cli.yml");
     let matches = App::from_yaml(cli_yaml).get_matches();
     let arguments = Arguments::from_matches(&matches);
@@ -164,33 +144,15 @@ fn main() {
 
     let mut chat_service = ChatService::new();
 
-    let secret_key = match std::fs::File::open("secret_key") {
-        Ok(mut file) => {
-            let mut secret_key = [0u8; 32];
-            file.read_exact(&mut secret_key).unwrap();
-            secp256k1::SecretKey::from_bytes(secret_key).unwrap()
-        }
-        Err(_) => {
-            let secret_key = secp256k1::SecretKey::generate();
-            // Save generated secret key
-            let mut file = std::fs::File::create("secret_key").unwrap();
-            file.write_all(&secret_key.to_bytes()).unwrap();
-            file.flush().unwrap();
-            secret_key
-        }
-    };
-    let keypair = Keypair::Secp256k1(secret_key.clone().into());
-    let peer_id = PeerId::from_public_key(keypair.public());
-
-    info!("our peer id: {}", peer_id);
+    let identity = load_identity(&arguments.identity)
+        .expect("couldn't load identity file");
+    info!("our peer id: {}", identity.id());
 
     let config = ChatServiceConfig {
-        secret_key,
+        identity,
         channel_cap: 25,
         heartbeat_interval: 10,
-        listen_addr,
-        keypair,
-        peer_id,
+        listen_addr: arguments.listen_addr,
     };
 
     let (sender, receiver) = channel::<Message>(10);
@@ -234,5 +196,13 @@ fn main() {
         }
 
         chat_service.stop().expect("couldn't stop chat service")
+    })
+}
+
+fn load_identity(file: &Path) -> std::io::Result<Identity> {
+    Identity::from_file(file).or_else(|_| {
+        let id = Identity::generate();
+        id.to_file(file)?;
+        Ok(id)
     })
 }

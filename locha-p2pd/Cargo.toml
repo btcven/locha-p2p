@@ -14,6 +14,7 @@ workspace = "../"
 
 [dependencies]
 clap = { version = "~2.27.0", features = ["yaml"] }
+env_logger = "0.7"
 futures = "0.3"
 libp2p = "0.24"
 locha-p2p = { version = "0.1", path = "../" }

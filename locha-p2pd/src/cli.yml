@@ -15,6 +15,13 @@ args:
         long: dial
         value_name: multiaddr
         help: Dial a peer using it's multiaddress.
+    - identity:
+        short: id
+        long: identity
+        value_name: FILE
+        help: Identity file path
+        default_value: "secret_key"
+        takes_value: true
     - echo:
         long: echo
         help: Enable testing by echoing messages from the Locha Mesh Chat application.

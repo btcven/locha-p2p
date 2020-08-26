@@ -25,9 +25,11 @@ mod chat_service;
 mod config;
 mod error;
 mod events;
+mod identity;
 mod sync_start_cond;
 
 pub use self::chat_service::{ChatService, CHAT_SERVICE_GOSSIP_PROTCOL_NAME};
 pub use self::config::ChatServiceConfig;
 pub use self::error::Error;
 pub use self::events::ChatServiceEvents;
+pub use self::identity::Identity;
