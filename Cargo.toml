@@ -1,11 +1,16 @@
 [package]
 name = "locha-p2p"
 version = "0.1.0"
-authors = ["Jean Pierre Dudey <me@jeandudey.tech>"]
+authors = ["Locha Mesh Developers <contact@locha.io>"]
 edition = "2018"
+license = "Apache-2.0"
 
 [workspace]
-members = ["protocols/chat"]
+members = ["locha-p2pd"]
 
 [dependencies]
-locha-p2p-chat = { version = "0.1", path = "protocols/chat" }
+async-std = { version = "1", features = ["unstable"] }
+futures = "0.3"
+libp2p = "0.24"
+log = "0.4"
+parking_lot  = "0.11"

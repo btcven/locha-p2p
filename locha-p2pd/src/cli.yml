@@ -1,0 +1,20 @@
+name: locha-p2pd
+version: "0.1"
+author: Locha Mesh Developers <contact@locha.io>
+about: Locha P2P Chat daemon
+args:
+    - listen-addr:
+        short: l
+        long: listen-addr
+        value_name: multiaddr 
+        help: The address where the node will listen for incoming connections.
+        default_value: "/ip4/0.0.0.0/tcp/0"
+        takes_value: true
+    - dial:
+        short: d
+        long: dial
+        value_name: multiaddr
+        help: Dial a peer using it's multiaddress.
+    - echo:
+        long: echo
+        help: Enable testing by echoing messages from the Locha Mesh Chat application.
