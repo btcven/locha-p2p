@@ -99,6 +99,12 @@ impl SyncStartCond {
     }
 }
 
+impl Default for SyncStartCond {
+    fn default() -> SyncStartCond {
+        SyncStartCond::new()
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;

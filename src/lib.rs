@@ -21,15 +21,8 @@
 #![doc(html_logo_url = "https://locha.io/i/128.png")]
 #![doc(html_favicon_url = "https://locha.io/i/128.png")]
 
-mod chat_service;
-mod config;
-mod error;
-mod events;
-mod identity;
-mod sync_start_cond;
+pub mod identity;
+pub mod runtime;
 
-pub use self::chat_service::{ChatService, CHAT_SERVICE_GOSSIP_PROTCOL_NAME};
-pub use self::config::ChatServiceConfig;
-pub use self::error::Error;
-pub use self::events::ChatServiceEvents;
-pub use self::identity::Identity;
+pub use libp2p::Multiaddr;
+pub use libp2p::PeerId;
