@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::identity::Identity;
 use libp2p::Multiaddr;
 
-#[derive(Debug)]
-pub struct ChatServiceConfig {
-    pub identity: Identity,
-    pub listen_addr: Multiaddr,
-    pub channel_cap: usize,
-    pub heartbeat_interval: u64,
+/// Chat service events
+pub trait RuntimeEvents: Send {
+    /// New message received
+    fn on_new_message(&mut self, message: String);
+
+    /// New listening address
+    ///
+    /// This informs that the Chat Service is listening on the provided
+    /// Multiaddress.
+    fn on_new_listen_addr(&mut self, multiaddr: Multiaddr);
 }

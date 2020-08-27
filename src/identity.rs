@@ -12,6 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! # Identity
+//!
+//! An identity is composed from a [secp256k1] ECDSA key-pair, the reasoning
+//! behind this is that it is well known and can be easily generated from
+//! a [BIP-39] seed which are easily rememberable instead of a raw private
+//! key which pretty hard to remember or write down.
+//!
+//! [secp256k1]: https://en.bitcoin.it/wiki/Secp256k1
+//! [BIP-39]: https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki
+
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::Path;
@@ -34,7 +44,7 @@ impl Identity {
     /// # Example
     ///
     /// ```rust
-    /// use locha_p2p::Identity;
+    /// use locha_p2p::identity::Identity;
     ///
     /// let id = Identity::generate();
     /// ```
@@ -49,7 +59,7 @@ impl Identity {
     /// # Example
     ///
     /// ```rust
-    /// use locha_p2p::Identity;
+    /// use locha_p2p::identity::Identity;
     ///
     /// let id = Identity::generate();
     /// id.to_file("id.key")
@@ -67,7 +77,7 @@ impl Identity {
     /// # Example
     ///
     /// ```rust
-    /// use locha_p2p::Identity;
+    /// use locha_p2p::identity::Identity;
     ///
     /// let id = Identity::from_file("id.key").ok();
     /// ```

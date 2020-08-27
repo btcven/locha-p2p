@@ -12,6 +12,59 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! # Runtime
+//!
+//! This contains a runtime for the Chat. The network behaviour and swarm is
+//! handled on a separate thread, we communicate with the thread by sending
+//! actions to it. It also reports us throhgh callbacks the events that
+//! happen. This is especially useful for language bridges such as the JNI
+//! or Node.JS where we can't use the async/await method as we do on Rust and
+//! we need a thread to do it for us, that's what `Runtime` does.
+//!
+//! # Examples
+//!
+//! ```rust
+//! use locha_p2p::identity::Identity;
+//! use locha_p2p::runtime::Runtime;
+//! use locha_p2p::runtime::events::RuntimeEvents;
+//! use locha_p2p::runtime::config::RuntimeConfig;
+//! use locha_p2p::Multiaddr;
+//!
+//! struct EventsHandler;
+//!
+//! impl RuntimeEvents for EventsHandler {
+//!     fn on_new_message(&mut self, message: String) {
+//!         println!("new message: {}", message);
+//!     }
+//!
+//!     fn on_new_listen_addr(&mut self, addr: Multiaddr) {
+//!         println!("new listen addr: {}", addr);
+//!     }
+//! }
+//!
+//! let config = RuntimeConfig {
+//!     identity: Identity::generate(),
+//!     listen_addr: "/ip4/0.0.0.0/tcp/0".parse().expect("invalid address"),
+//!     channel_cap: 20,
+//!     heartbeat_interval: 5,
+//! };
+//!
+//! let mut runtime = Runtime::new();
+//!
+//! runtime.start(config, Box::new(EventsHandler)).expect("could not start runtime");
+//!
+//! // Send a message and the runtime will dispatch it.
+//! runtime.send_message("Welcome, bienvenido!".to_string()).expect("could not send message");
+//!
+//! // Can be stopped at any time when requested.
+//! runtime.stop().expect("runtime failed to stop or has been already stopped");
+//! ```
+
+pub mod config;
+pub mod error;
+pub mod events;
+pub mod sync_start_cond;
+
 use std::io;
 use std::time::Duration;
 
@@ -35,38 +88,44 @@ use libp2p::{Multiaddr, PeerId};
 
 use log::{error, info, trace, warn};
 
-use crate::config::ChatServiceConfig;
-use crate::error::Error;
-use crate::events::ChatServiceEvents;
+use self::config::RuntimeConfig;
+use self::error::Error;
+use self::events::RuntimeEvents;
+use self::sync_start_cond::{StartStatus, SyncStartCond};
+
 use crate::identity::Identity;
-use crate::sync_start_cond::{StartStatus, SyncStartCond};
 
 /// Gossipsub protocol name for Locha P2P Chat
 pub const CHAT_SERVICE_GOSSIP_PROTCOL_NAME: &[u8] = b"/locha-gossip/1.0.0";
 
-pub struct ChatService {
+/// Locha P2P runtime
+pub struct Runtime {
     handle: Option<task::JoinHandle<Result<(), Error>>>,
-    sender: Option<Sender<ChatAction>>,
+    tx: Option<Sender<ChatAction>>,
 
     identity: Option<Identity>,
 }
 
-impl ChatService {
-    pub fn new() -> ChatService {
-        trace!("creating new ChatService");
+impl Runtime {
+    /// Create a new runtime
+    pub fn new() -> Runtime {
+        trace!("creating new Runtime");
 
-        ChatService {
+        Runtime {
             handle: None,
-            sender: None,
+            tx: None,
 
             identity: None,
         }
     }
 
+    /// Has been started this Runtime?
     pub fn is_started(&self) -> bool {
-        self.handle.is_some() && self.sender.is_some()
+        self.handle.is_some() && self.tx.is_some()
     }
 
+    /// Identity of the Runtime, this is the Peer (this node)
+    /// identity.
     pub fn identity(&self) -> &Identity {
         &self
             .identity
@@ -74,10 +133,12 @@ impl ChatService {
             .expect("chat service has not been started")
     }
 
+    /// Start the runtime with the provided configuration and events
+    /// handler.
     pub fn start(
         &mut self,
-        config: ChatServiceConfig,
-        events_handler: Box<dyn ChatServiceEvents>,
+        config: RuntimeConfig,
+        events_handler: Box<dyn RuntimeEvents>,
     ) -> Result<(), Error> {
         trace!("starting chat service");
 
@@ -86,7 +147,7 @@ impl ChatService {
             return Err(Error::AlreadyStarted);
         }
 
-        let (sender, receiver) = channel::<ChatAction>(config.channel_cap);
+        let (tx, rx) = channel::<ChatAction>(config.channel_cap);
 
         let identity = config.identity.clone();
 
@@ -94,22 +155,22 @@ impl ChatService {
         let handle = task::spawn({
             let cond = cond.clone();
 
-            async {
-                Self::event_loop(cond, receiver, config, events_handler).await
-            }
+            async { Self::event_loop(cond, rx, config, events_handler).await }
         });
         if let StartStatus::Failed = cond.wait() {
             return task::block_on(async move { handle.await });
         }
 
         self.handle = Some(handle);
-        self.sender = Some(sender);
+        self.tx = Some(tx);
 
         self.identity = Some(identity);
 
         Ok(())
     }
 
+    /// Stop the runtime. This function will block until the runtime
+    /// is closed.
     pub fn stop(&mut self) -> Result<(), Error> {
         trace!("stopping chat service");
 
@@ -119,7 +180,7 @@ impl ChatService {
         }
 
         if self.handle.is_none() {
-            self.sender = None;
+            self.tx = None;
             return Ok(());
         }
 
@@ -128,17 +189,19 @@ impl ChatService {
         task::block_on(async { self.handle.as_mut().unwrap().await })?;
 
         self.handle = None;
-        self.sender = None;
+        self.tx = None;
 
         Ok(())
     }
 
+    /// Dial a peer using it's multiaddress
     pub fn dial(&self, multiaddr: Multiaddr) -> Result<(), Error> {
         trace!("sending dial: {}", multiaddr);
 
         self.send_action(ChatAction::Dial(multiaddr))
     }
 
+    /// Send a message
     pub fn send_message(&self, message: String) -> Result<(), Error> {
         trace!("sending message");
 
@@ -147,17 +210,15 @@ impl ChatService {
 
     /// Send an action to the event loop.
     fn send_action(&self, action: ChatAction) -> Result<(), Error> {
-        if self.sender.is_none() {
+        if self.tx.is_none() {
             if self.handle.is_none() {
-                error!("ChatService is not initialized");
+                error!("Runtime is not initialized");
             }
 
             return Err(Error::ChannelClosed);
         }
 
-        task::block_on(async {
-            self.sender.as_ref().unwrap().send(action).await
-        });
+        task::block_on(async { self.tx.as_ref().unwrap().send(action).await });
         Ok(())
     }
 
@@ -229,9 +290,9 @@ impl ChatService {
     /// as sending a message or dialing a node.
     async fn event_loop(
         cond: SyncStartCond,
-        receiver: Receiver<ChatAction>,
-        config: ChatServiceConfig,
-        mut events_handler: Box<dyn ChatServiceEvents>,
+        rx: Receiver<ChatAction>,
+        config: RuntimeConfig,
+        mut events_handler: Box<dyn RuntimeEvents>,
     ) -> Result<(), Error> {
         let transport = Self::build_transport(config.identity.keypair())?;
 
@@ -265,7 +326,7 @@ impl ChatService {
 
         loop {
             select! {
-                action = receiver.recv().fuse() => {
+                action = rx.recv().fuse() => {
                     if action.is_err() {
                         warn!("Channel has been dropped without exiting properly");
                         break;
@@ -303,7 +364,7 @@ impl ChatService {
 
     async fn handle_swarm_event(
         swarm_event: &SwarmEvent<GossipsubEvent, io::Error>,
-        events_handler: &mut dyn ChatServiceEvents,
+        events_handler: &mut dyn RuntimeEvents,
     ) {
         trace!("new swarm event");
 
@@ -424,7 +485,7 @@ impl ChatService {
     /// Handle gossipsub events
     async fn handle_gossipsub_event(
         event: &GossipsubEvent,
-        events_handler: &mut dyn ChatServiceEvents,
+        events_handler: &mut dyn RuntimeEvents,
     ) {
         if let GossipsubEvent::Message(ref peer_id, ref id, ref message) =
             *event
@@ -438,8 +499,8 @@ impl ChatService {
     }
 }
 
-impl Default for ChatService {
-    fn default() -> ChatService {
+impl Default for Runtime {
+    fn default() -> Runtime {
         Self::new()
     }
 }

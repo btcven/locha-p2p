@@ -26,12 +26,14 @@ use async_std::sync::{channel, Sender};
 use async_std::task;
 
 use libp2p::multihash::{MultihashDigest, Sha2_256};
-use libp2p::Multiaddr;
 
 use serde_derive::{Deserialize, Serialize};
 
-use locha_p2p::Identity;
-use locha_p2p::{ChatService, ChatServiceConfig, ChatServiceEvents};
+use locha_p2p::identity::Identity;
+use locha_p2p::runtime::config::RuntimeConfig;
+use locha_p2p::runtime::events::RuntimeEvents;
+use locha_p2p::runtime::Runtime;
+use locha_p2p::Multiaddr;
 
 use log::{info, trace};
 
@@ -86,7 +88,7 @@ impl EventsHandler {
     }
 }
 
-impl ChatServiceEvents for EventsHandler {
+impl RuntimeEvents for EventsHandler {
     fn on_new_message(&mut self, message: String) {
         info!("new message:\n{}", message);
 
@@ -139,16 +141,13 @@ fn main() {
     let matches = App::from_yaml(cli_yaml).get_matches();
     let arguments = Arguments::from_matches(&matches);
 
-    let listen_addr = value_t!(matches.value_of("listen-addr"), Multiaddr)
-        .unwrap_or_else(|e| e.exit());
-
-    let mut chat_service = ChatService::new();
+    let mut runtime = Runtime::new();
 
     let identity = load_identity(&arguments.identity)
         .expect("couldn't load identity file");
     info!("our peer id: {}", identity.id());
 
-    let config = ChatServiceConfig {
+    let config = RuntimeConfig {
         identity,
         channel_cap: 25,
         heartbeat_interval: 10,
@@ -161,13 +160,13 @@ fn main() {
         echo: arguments.echo,
     };
 
-    chat_service
+    runtime
         .start(config, Box::new(events_handler))
         .expect("couldn't start chat service");
 
     // Reach out to another node if specified
     for to_dial in arguments.dials {
-        chat_service.dial(to_dial).expect("couldn't dial peer");
+        runtime.dial(to_dial).expect("couldn't dial peer");
     }
 
     let input = io::stdin();
@@ -182,20 +181,20 @@ fn main() {
                         break;
                     }
 
-                    chat_service
+                    runtime
                         .send_message(line)
                         .expect("couldn't send message")
                 }
                 msg = channel.recv().fuse() => {
                     if let Ok(ref msg) = msg {
-                        chat_service.send_message(serde_json::to_string(msg).unwrap())
+                        runtime.send_message(serde_json::to_string(msg).unwrap())
                             .expect("couldn't send message")
                     }
                 }
             }
         }
 
-        chat_service.stop().expect("couldn't stop chat service")
+        runtime.stop().expect("couldn't stop chat service")
     })
 }
 
