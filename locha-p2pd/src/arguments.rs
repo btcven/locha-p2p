@@ -24,8 +24,9 @@ pub struct Arguments {
     pub listen_addr: Multiaddr,
     pub dials: Vec<Multiaddr>,
     pub identity: PathBuf,
+    pub tui_tick_rate: u64,
     pub echo: bool,
-    pub tui: bool,
+    pub log_only: bool,
 }
 
 impl Arguments {
@@ -40,15 +41,18 @@ impl Arguments {
         };
         let identity = value_t!(matches.value_of("identity"), PathBuf)
             .unwrap_or_else(|e| e.exit());
+        let tui_tick_rate = value_t!(matches.value_of("tui-tick-rate"), u64)
+            .unwrap_or_else(|e| e.exit());
         let echo = matches.is_present("echo");
-        let tui = matches.is_present("tui");
+        let log_only = matches.is_present("log-only");
 
         Arguments {
             listen_addr,
             dials,
             identity,
+            tui_tick_rate,
             echo,
-            tui,
+            log_only,
         }
     }
 }

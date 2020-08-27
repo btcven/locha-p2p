@@ -12,17 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![recursion_limit = "256"]
+
 use std::path::Path;
+use std::sync::Arc;
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clap::{load_yaml, App};
 
 use futures::prelude::*;
 use futures::select;
 
-use async_std::io;
-use async_std::sync::{channel, Sender};
+use async_std::sync::{channel, Receiver, Sender};
 use async_std::task;
 
 use libp2p::multihash::{MultihashDigest, Sha2_256};
@@ -33,9 +35,14 @@ use serde_derive::{Deserialize, Serialize};
 use locha_p2p::Identity;
 use locha_p2p::{ChatService, ChatServiceConfig, ChatServiceEvents};
 
+use termion::event::Key;
+
+use parking_lot::RwLock;
+
 use log::{info, trace};
 
 mod arguments;
+mod ui;
 use arguments::Arguments;
 
 struct EventsHandler {
@@ -131,16 +138,15 @@ struct Message {
 }
 
 fn main() {
-    env_logger::Builder::new()
-        .filter_level(log::LevelFilter::Info)
-        .init();
-
     let cli_yaml = load_yaml!("cli.yml");
     let matches = App::from_yaml(cli_yaml).get_matches();
     let arguments = Arguments::from_matches(&matches);
 
-    let listen_addr = value_t!(matches.value_of("listen-addr"), Multiaddr)
-        .unwrap_or_else(|e| e.exit());
+    if arguments.log_only {
+        env_logger::Builder::from_env("LOCHA_P2PD_LOG")
+            .filter_level(log::LevelFilter::Info)
+            .init();
+    }
 
     let mut chat_service = ChatService::new();
 
@@ -152,7 +158,7 @@ fn main() {
         identity,
         channel_cap: 25,
         heartbeat_interval: 10,
-        listen_addr: arguments.listen_addr,
+        listen_addr: arguments.listen_addr.clone(),
     };
 
     let (sender, receiver) = channel::<Message>(10);
@@ -166,37 +172,80 @@ fn main() {
         .expect("couldn't start chat service");
 
     // Reach out to another node if specified
-    for to_dial in arguments.dials {
+    for to_dial in arguments.dials.iter() {
         chat_service.dial(to_dial).expect("couldn't dial peer");
     }
 
-    let input = io::stdin();
-    let channel = receiver;
-
     task::block_on(async move {
-        loop {
-            let mut line = String::new();
-            select! {
-                _ = input.read_line(&mut line).fuse() => {
-                    if line == "exit\n" || line == "exit\r\n" || line == "exit\r" {
-                        break;
-                    }
+        if arguments.log_only {
+            log_only_loop(chat_service, receiver).await
+        } else {
+            terminal_ui_loop(chat_service, receiver, arguments).await
+        }
+    })
+}
 
-                    chat_service
-                        .send_message(line)
+async fn log_only_loop(
+    chat_service: ChatService,
+    channel: Receiver<Message>,
+) -> ! {
+    loop {
+        let msg = channel.recv().await;
+        if let Ok(ref msg) = msg {
+            chat_service
+                .send_message(serde_json::to_string(msg).unwrap())
+                .expect("couldn't send message")
+        }
+    }
+}
+
+async fn terminal_ui_loop(
+    mut chat_service: ChatService,
+    channel: Receiver<Message>,
+    arguments: Arguments,
+) {
+    let ui_data = Arc::new(RwLock::new(ui::Data::new()));
+    let mut ui = ui::UserInterface::new(ui_data.clone()).unwrap();
+    let events =
+        ui::Events::new(Duration::from_millis(arguments.tui_tick_rate));
+
+    loop {
+        select! {
+            msg = channel.recv().fuse() => {
+                if let Ok(ref msg) = msg {
+                    chat_service.send_message(serde_json::to_string(msg).unwrap())
                         .expect("couldn't send message")
                 }
-                msg = channel.recv().fuse() => {
-                    if let Ok(ref msg) = msg {
-                        chat_service.send_message(serde_json::to_string(msg).unwrap())
-                            .expect("couldn't send message")
+            }
+            event = events.next().fuse() => {
+                if event.is_err() {
+                    break;
+                }
+
+                match event.unwrap() {
+                    ui::Event::Tick => {
+                        ui.tick().unwrap();
                     }
+                    ui::Event::Input(Key::Char(c)) => {
+                        if c == 'q' {
+                            break;
+                        } if c == '\n' {
+                            let contents = ui_data.write().input_send();
+                            chat_service.send_message(contents).unwrap();
+                        } else {
+                            ui_data.write().input_push(c);
+                        }
+                    }
+                    ui::Event::Input(Key::Backspace) => {
+                        ui_data.write().input_backspace();
+                    }
+                    _ => (),
                 }
             }
         }
+    }
 
-        chat_service.stop().expect("couldn't stop chat service")
-    })
+    chat_service.stop().unwrap();
 }
 
 fn load_identity(file: &Path) -> std::io::Result<Identity> {

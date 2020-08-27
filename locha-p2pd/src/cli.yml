@@ -22,6 +22,15 @@ args:
         help: Identity file path
         default_value: "secret_key"
         takes_value: true
+    - tui-tick-rate:
+        long: tui-tick-rate
+        value_name: ticks
+        help: Terminal UI tick rate in milliseconds
+        default_value: "20"
+        takes_value: true
     - echo:
         long: echo
         help: Enable testing by echoing messages from the Locha Mesh Chat application.
+    - log-only:
+        long: log-only 
+        help: Start node only for logging without Terminal UI
