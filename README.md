@@ -23,6 +23,8 @@ written in the [Rust] programming language.
 
 [Rust]: https://www.rust-lang.org/
 
+# <a href="https://btcven.github.io/locha-p2p/locha_p2p/index.html">Documentation</a>
+
 # License
 
 Copyright (c) 2020 Bitcoin Venezuela and Locha Mesh Developers.
