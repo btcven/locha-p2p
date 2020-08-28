@@ -1,3 +1,6 @@
 /target
 Cargo.lock
 locha-p2pd/secret_key
+
+# Files from tests
+id.key
