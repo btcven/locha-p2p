@@ -28,7 +28,7 @@
 //! use locha_p2p::runtime::Runtime;
 //! use locha_p2p::runtime::events::RuntimeEvents;
 //! use locha_p2p::runtime::config::RuntimeConfig;
-//! use locha_p2p::Multiaddr;
+//! use locha_p2p::{Multiaddr, PeerId};
 //!
 //! struct EventsHandler;
 //!
@@ -37,9 +37,13 @@
 //!         println!("new message: {}", message);
 //!     }
 //!
-//!     fn on_new_listen_addr(&mut self, addr: Multiaddr) {
+//!     fn on_new_listen_addr(&mut self, addr: &Multiaddr) {
 //!         println!("new listen addr: {}", addr);
 //!     }
+//!
+//!     fn on_peer_discovered(&mut self, _peer: &PeerId, _addrs: Vec<Multiaddr>) {}
+//!
+//!     fn on_peer_unroutable(&mut self, _peer: &PeerId) {}
 //! }
 //!
 //! let config = RuntimeConfig {
@@ -85,7 +89,7 @@ use futures::select;
 
 use libp2p::core::connection::{ConnectedPoint, ConnectionError};
 use libp2p::swarm::protocols_handler::NodeHandlerWrapperError;
-use libp2p::swarm::{Swarm, SwarmEvent};
+use libp2p::swarm::{NetworkBehaviour, Swarm, SwarmEvent};
 
 use libp2p::core::either::EitherError;
 
@@ -330,7 +334,13 @@ impl Runtime {
                         }
                     }
                 },
-                event = swarm.next_event().fuse() => Self::handle_swarm_event(&event, &mut *events_handler).await,
+                event = swarm.next_event().fuse() => {
+                    Self::handle_swarm_event(
+                        &mut swarm,
+                        &event,
+                        &mut *events_handler
+                    ).await
+                },
             }
         }
 
@@ -338,6 +348,7 @@ impl Runtime {
     }
 
     async fn handle_swarm_event(
+        swarm: &mut Swarm<Network>,
         swarm_event: &SwarmEvent<
             NetworkEvent,
             EitherError<io::Error, io::Error>,
@@ -348,7 +359,8 @@ impl Runtime {
 
         match *swarm_event {
             SwarmEvent::Behaviour(ref behaviour) => {
-                Self::handle_behaviour_event(behaviour, events_handler).await
+                Self::handle_behaviour_event(swarm, behaviour, events_handler)
+                    .await
             }
             SwarmEvent::ConnectionEstablished {
                 ref peer_id,
@@ -430,13 +442,7 @@ impl Runtime {
                 );
             }
             SwarmEvent::NewListenAddr(ref address) => {
-                info!(
-                    target: "locha-p2p",
-                    "Listening on new address {}",
-                    address
-                );
-
-                events_handler.on_new_listen_addr(address.clone())
+                events_handler.on_new_listen_addr(address)
             }
             SwarmEvent::ExpiredListenAddr(ref address) => {
                 info!(
@@ -484,22 +490,18 @@ impl Runtime {
 
     /// Handle gossipsub events
     async fn handle_behaviour_event(
+        swarm: &mut Swarm<Network>,
         event: &NetworkEvent,
         events_handler: &mut dyn RuntimeEvents,
     ) {
         match *event {
             NetworkEvent::Gossipsub(ref gossip_ev) => {
                 if let GossipsubEvent::Message(
-                    ref peer_id,
-                    ref id,
+                    ref _peer,
+                    ref _id,
                     ref message,
                 ) = **gossip_ev
                 {
-                    debug!(
-                        target: "locha-p2p",
-                        "received message {}, from peer {}", id, peer_id
-                    );
-
                     let contents =
                         String::from_utf8_lossy(message.data.as_slice())
                             .into_owned();

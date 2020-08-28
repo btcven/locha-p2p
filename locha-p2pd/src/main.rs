@@ -31,9 +31,9 @@ use serde_derive::{Deserialize, Serialize};
 
 use locha_p2p::identity::Identity;
 use locha_p2p::runtime::config::RuntimeConfig;
-use locha_p2p::runtime::events::RuntimeEvents;
+use locha_p2p::runtime::events::{RuntimeEvents, RuntimeEventsLogger};
 use locha_p2p::runtime::Runtime;
-use locha_p2p::Multiaddr;
+use locha_p2p::{Multiaddr, PeerId};
 
 use log::{info, trace};
 
@@ -97,7 +97,11 @@ impl RuntimeEvents for EventsHandler {
         }
     }
 
-    fn on_new_listen_addr(&mut self, _multiaddr: Multiaddr) {}
+    fn on_new_listen_addr(&mut self, _multiaddr: &Multiaddr) {}
+
+    fn on_peer_discovered(&mut self, _peer: &PeerId, _addrs: Vec<Multiaddr>) {}
+
+    fn on_peer_unroutable(&mut self, _peer: &PeerId) {}
 }
 
 #[derive(Deserialize, Serialize)]
@@ -164,7 +168,7 @@ fn main() {
     };
 
     runtime
-        .start(config, Box::new(events_handler))
+        .start(config, Box::new(RuntimeEventsLogger::new(events_handler)))
         .expect("couldn't start chat service");
 
     // Reach out to another node if specified
