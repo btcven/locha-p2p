@@ -1,4 +1,4 @@
-// Copyright 2020 Locha Inc
+// Copyright 2020 Bitcoin Venezuela and Locha Mesh Developers
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,8 +21,14 @@
 #![doc(html_logo_url = "https://locha.io/i/128.png")]
 #![doc(html_favicon_url = "https://locha.io/i/128.png")]
 
+pub mod discovery;
+pub mod gossip;
 pub mod identity;
+pub mod network;
 pub mod runtime;
 
 pub use libp2p::Multiaddr;
 pub use libp2p::PeerId;
+
+mod transport;
+pub use transport::build_transport;
