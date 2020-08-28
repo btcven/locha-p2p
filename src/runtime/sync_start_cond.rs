@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! # Synchronized start condition
+
 use std::sync::Arc;
 
 use parking_lot::{Condvar, Mutex};

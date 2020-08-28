@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! # Runtime configuration
+
 use crate::identity::Identity;
 use libp2p::Multiaddr;
 
@@ -21,4 +23,9 @@ pub struct RuntimeConfig {
     pub listen_addr: Multiaddr,
     pub channel_cap: usize,
     pub heartbeat_interval: u64,
+
+    pub use_mdns: bool,
+    pub allow_ipv4_private: bool,
+    pub allow_ipv6_link_local: bool,
+    pub allow_ipv6_ula: bool,
 }

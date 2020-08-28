@@ -15,6 +15,7 @@ args:
         long: dial
         value_name: multiaddr
         help: Dial a peer using it's multiaddress.
+        multiple: true
     - identity:
         short: id
         long: identity
@@ -25,3 +26,15 @@ args:
     - echo:
         long: echo
         help: Enable testing by echoing messages from the Locha Mesh Chat application.
+    - allow-ipv4-private:
+        long: allow-ipv4-private
+        help: Enable discovery of IPv4 private addresses.
+    - allow-ipv6-link-local:
+        long: allow-ipv6-link-local
+        help: Enable discovery of IPv6 link local addresses (fe80::/16).
+    - allow-ipv6-ula:
+        long: allow-ipv6-ula
+        help: Enable discovery of IPv6 Unique Local Addresses (fc00::/7)
+    - use-mdns:
+        long: use-mdns
+        help: Enable discovery through mDNS. This also enables --allow-ipv4-private and --allow-ipv6-link-local

@@ -31,9 +31,9 @@ use serde_derive::{Deserialize, Serialize};
 
 use locha_p2p::identity::Identity;
 use locha_p2p::runtime::config::RuntimeConfig;
-use locha_p2p::runtime::events::RuntimeEvents;
+use locha_p2p::runtime::events::{RuntimeEvents, RuntimeEventsLogger};
 use locha_p2p::runtime::Runtime;
-use locha_p2p::Multiaddr;
+use locha_p2p::{Multiaddr, PeerId};
 
 use log::{info, trace};
 
@@ -97,9 +97,11 @@ impl RuntimeEvents for EventsHandler {
         }
     }
 
-    fn on_new_listen_addr(&mut self, multiaddr: Multiaddr) {
-        info!("new listen addr: {}", multiaddr)
-    }
+    fn on_new_listen_addr(&mut self, _multiaddr: &Multiaddr) {}
+
+    fn on_peer_discovered(&mut self, _peer: &PeerId, _addrs: Vec<Multiaddr>) {}
+
+    fn on_peer_unroutable(&mut self, _peer: &PeerId) {}
 }
 
 #[derive(Deserialize, Serialize)]
@@ -134,7 +136,7 @@ struct Message {
 
 fn main() {
     env_logger::Builder::new()
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(log::LevelFilter::Trace)
         .init();
 
     let cli_yaml = load_yaml!("cli.yml");
@@ -152,6 +154,11 @@ fn main() {
         channel_cap: 25,
         heartbeat_interval: 10,
         listen_addr: arguments.listen_addr,
+
+        use_mdns: arguments.use_mdns,
+        allow_ipv4_private: arguments.allow_ipv4_private,
+        allow_ipv6_link_local: arguments.allow_ipv6_link_local,
+        allow_ipv6_ula: arguments.allow_ipv6_ula,
     };
 
     let (sender, receiver) = channel::<Message>(10);
@@ -161,7 +168,7 @@ fn main() {
     };
 
     runtime
-        .start(config, Box::new(events_handler))
+        .start(config, Box::new(RuntimeEventsLogger::new(events_handler)))
         .expect("couldn't start chat service");
 
     // Reach out to another node if specified
