@@ -97,9 +97,7 @@ impl RuntimeEvents for EventsHandler {
         }
     }
 
-    fn on_new_listen_addr(&mut self, multiaddr: Multiaddr) {
-        info!("new listen addr: {}", multiaddr)
-    }
+    fn on_new_listen_addr(&mut self, _multiaddr: Multiaddr) {}
 }
 
 #[derive(Deserialize, Serialize)]
@@ -152,6 +150,11 @@ fn main() {
         channel_cap: 25,
         heartbeat_interval: 10,
         listen_addr: arguments.listen_addr,
+
+        use_mdns: arguments.use_mdns,
+        allow_ipv4_private: arguments.allow_ipv4_private,
+        allow_ipv6_link_local: arguments.allow_ipv6_link_local,
+        allow_ipv6_ula: arguments.allow_ipv6_ula,
     };
 
     let (sender, receiver) = channel::<Message>(10);
