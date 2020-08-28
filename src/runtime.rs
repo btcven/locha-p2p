@@ -508,10 +508,11 @@ impl Runtime {
             }
             NetworkEvent::Discovery(ref disc_ev) => match *disc_ev {
                 DiscoveryEvent::Discovered(ref peer) => {
-                    info!(target: "locha-p2p", "discovered peer {}", peer);
+                    let addrs = swarm.addresses_of_peer(peer);
+                    events_handler.on_peer_discovered(peer, addrs);
                 }
                 DiscoveryEvent::UnroutablePeer(ref peer) => {
-                    info!(target: "locha-p2p", "unreachable peer {}", peer);
+                    events_handler.on_peer_unroutable(peer);
                 }
             },
         }
