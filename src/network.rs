@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::time::Duration;
-
 use libp2p::NetworkBehaviour;
 
 use crate::discovery::{DiscoveryBehaviour, DiscoveryEvent};
 use crate::gossip::{Gossipsub, GossipsubEvent, PublishError, Topic};
-use crate::upnp::{Upnp, UpnpEvent};
 
 use crate::identity::Identity;
 
@@ -28,7 +25,6 @@ use crate::identity::Identity;
 pub struct Network {
     discovery: DiscoveryBehaviour,
     gossip: Gossipsub,
-    upnp: Upnp,
 }
 
 impl Network {
@@ -39,7 +35,6 @@ impl Network {
         Network {
             discovery,
             gossip: crate::gossip::new(identity),
-            upnp: Upnp::new(Duration::from_secs(30)),
         }
     }
 
@@ -60,7 +55,6 @@ impl Network {
 pub enum NetworkEvent {
     Discovery(DiscoveryEvent),
     Gossipsub(Box<GossipsubEvent>),
-    Upnp(UpnpEvent),
 }
 
 impl From<DiscoveryEvent> for NetworkEvent {
@@ -72,11 +66,5 @@ impl From<DiscoveryEvent> for NetworkEvent {
 impl From<GossipsubEvent> for NetworkEvent {
     fn from(event: GossipsubEvent) -> NetworkEvent {
         NetworkEvent::Gossipsub(Box::new(event))
-    }
-}
-
-impl From<UpnpEvent> for NetworkEvent {
-    fn from(event: UpnpEvent) -> NetworkEvent {
-        NetworkEvent::Upnp(event)
     }
 }
