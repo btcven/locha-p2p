@@ -25,6 +25,33 @@ written in the [Rust] programming language.
 
 # <a href="https://btcven.github.io/locha-p2p/locha_p2p/index.html">Documentation</a>
 
+# Dependencies
+
+- Rust >=1.43
+- OpenSSL development libraries
+- pkg-config
+- GCC, clang or MSVC compiler.
+- libclang
+
+Installation of dependencies on Ubuntu 18.04/20.04:
+
+```bash
+sudo apt install gcc pkg-config libssl-dev libclang-9-dev
+```
+
+It's recommended to install `rustc` and `cargo` from your distribution package
+manager. On Ubuntu 18.04/20.04:
+
+
+```bash
+sudo apt install rustc cargo
+```
+
+However it's fine to use [rustup.rs] to have a working toolchain if your
+distribution `rustc` version is too outdated.
+
+[rustup.rs]: https://rustup.rs/
+
 # License
 
 Copyright (c) 2020 Bitcoin Venezuela and Locha Mesh Developers.
