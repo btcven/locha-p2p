@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::net::Ipv4Addr;
 use std::path::Path;
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -97,11 +98,13 @@ impl RuntimeEvents for EventsHandler {
         }
     }
 
-    fn on_new_listen_addr(&mut self, _multiaddr: &Multiaddr) {}
+    fn on_new_listen_addr(&mut self, _: &Multiaddr) {}
 
-    fn on_peer_discovered(&mut self, _peer: &PeerId, _addrs: Vec<Multiaddr>) {}
+    fn on_peer_discovered(&mut self, _: &PeerId, _: Vec<Multiaddr>) {}
 
-    fn on_peer_unroutable(&mut self, _peer: &PeerId) {}
+    fn on_peer_unroutable(&mut self, _: &PeerId) {}
+
+    fn on_external_ipv4_addr(&mut self, _: &Ipv4Addr) {}
 }
 
 #[derive(Deserialize, Serialize)]

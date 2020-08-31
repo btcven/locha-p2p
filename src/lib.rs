@@ -26,6 +26,7 @@ pub mod gossip;
 pub mod identity;
 pub mod network;
 pub mod runtime;
+pub mod upnp;
 
 pub use libp2p::Multiaddr;
 pub use libp2p::PeerId;

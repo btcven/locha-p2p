@@ -21,6 +21,8 @@
 //! Aditionally the wrapper [`RuntimeEventsLogger`] around [`RuntimeEvents`] is
 //! provided to log all events.
 
+use std::net::Ipv4Addr;
+
 use libp2p::{Multiaddr, PeerId};
 
 use log::{debug, info};
@@ -50,6 +52,11 @@ pub trait RuntimeEvents: Send {
     /// This informs that the Chat Service is listening on the provided
     /// Multiaddress.
     fn on_new_listen_addr(&mut self, address: &Multiaddr);
+
+    /// New external address
+    ///
+    /// This informs that our external IPv4 address has been found.
+    fn on_external_ipv4_addr(&mut self, address: &Ipv4Addr);
 }
 
 /// Small wrapper around [`RuntimeEvents`] that logs all events.
@@ -103,5 +110,15 @@ where
         );
 
         self.0.on_new_listen_addr(address);
+    }
+
+    fn on_external_ipv4_addr(&mut self, address: &Ipv4Addr) {
+        info!(
+            target: "locha-p2p",
+            "External IPv4 adddress found: {}",
+            address
+        );
+
+        self.0.on_external_ipv4_addr(address);
     }
 }

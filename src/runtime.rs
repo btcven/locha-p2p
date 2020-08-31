@@ -24,6 +24,8 @@
 //! # Examples
 //!
 //! ```rust
+//! use std::net::Ipv4Addr;
+//!
 //! use locha_p2p::identity::Identity;
 //! use locha_p2p::runtime::Runtime;
 //! use locha_p2p::runtime::events::RuntimeEvents;
@@ -41,9 +43,11 @@
 //!         println!("new listen addr: {}", addr);
 //!     }
 //!
-//!     fn on_peer_discovered(&mut self, _peer: &PeerId, _addrs: Vec<Multiaddr>) {}
+//!     fn on_peer_discovered(&mut self, _: &PeerId, _addrs: Vec<Multiaddr>) {}
 //!
-//!     fn on_peer_unroutable(&mut self, _peer: &PeerId) {}
+//!     fn on_peer_unroutable(&mut self, _: &PeerId) {}
+//!
+//!     fn on_external_ipv4_addr(&mut self, _: &Ipv4Addr) {}
 //! }
 //!
 //! let config = RuntimeConfig {
@@ -95,6 +99,8 @@ use libp2p::core::either::EitherError;
 
 use libp2p::{Multiaddr, PeerId};
 
+use void::Void;
+
 use log::{debug, error, info, trace, warn};
 
 use self::config::RuntimeConfig;
@@ -104,8 +110,10 @@ use self::sync_start_cond::{StartStatus, SyncStartCond};
 
 use crate::discovery::{DiscoveryBuilder, DiscoveryEvent};
 use crate::gossip::{GossipsubEvent, Topic};
-use crate::identity::Identity;
 use crate::network::{Network, NetworkEvent};
+use crate::upnp::UpnpEvent;
+
+use crate::identity::Identity;
 use crate::transport::build_transport;
 
 /// Gossipsub protocol name for Locha P2P Chat
@@ -351,7 +359,7 @@ impl Runtime {
         swarm: &mut Swarm<Network>,
         swarm_event: &SwarmEvent<
             NetworkEvent,
-            EitherError<io::Error, io::Error>,
+            EitherError<EitherError<io::Error, io::Error>, void::Void>,
         >,
         events_handler: &mut dyn RuntimeEvents,
     ) {
@@ -517,6 +525,11 @@ impl Runtime {
                     events_handler.on_peer_unroutable(peer);
                 }
             },
+            NetworkEvent::Upnp(ref upnp) => match *upnp {
+                UpnpEvent::ExternalIpv4Address(ref ipv4) => {
+                    events_handler.on_external_ipv4_addr(ipv4);
+                }
+            },
         }
     }
 }
@@ -564,7 +577,9 @@ fn log_connection_closed(
     num_established: u32,
     cause: &Option<
         ConnectionError<
-            NodeHandlerWrapperError<EitherError<io::Error, io::Error>>,
+            NodeHandlerWrapperError<
+                EitherError<EitherError<io::Error, io::Error>, Void>,
+            >,
         >,
     >,
 ) {
