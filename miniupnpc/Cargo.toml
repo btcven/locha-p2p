@@ -1,0 +1,12 @@
+[package]
+name = "miniupnpc"
+version = "0.1.0"
+authors = ["Locha Mesh Developers <contact@locha.io>"]
+edition = "2018"
+license = "Apache-2.0"
+
+[dependencies]
+miniupnpc-sys = { version = "0.1", path = "../miniupnpc-sys" }
+
+[dev-dependencies]
+clap = "2"

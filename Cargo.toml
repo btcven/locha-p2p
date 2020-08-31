@@ -6,7 +6,7 @@ edition = "2018"
 license = "Apache-2.0"
 
 [workspace]
-members = ["locha-p2pd"]
+members = ["locha-p2pd", "miniupnpc", "miniupnpc-sys"]
 
 [dependencies]
 async-std = { version = "1", features = ["unstable"] }
@@ -14,3 +14,5 @@ futures = "0.3"
 libp2p = "0.24"
 log = "0.4"
 parking_lot  = "0.11"
+miniupnpc = { version = "0.1", path = "miniupnpc" }
+void = "1"

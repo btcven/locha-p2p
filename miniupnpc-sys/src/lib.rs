@@ -12,24 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Locha P2P
+//! # miniupnp-sys - MiniUPnP Raw Bindings
 //!
-//! This library contains the necessary code to set up a node that works
-//! with the Locha P2P Chat.
+//! These are the low level bindings for MiniUPnP.
+//!
+//! **Note:** The miniupnp is compiled from source code and linked
+//! statically, it doesn't use the installed library on your OS.
+//! Consider opening a PR is you consider it necessary.
 
-#![recursion_limit = "1024"]
+#![allow(non_snake_case)]
 #![doc(html_logo_url = "https://locha.io/i/128.png")]
 #![doc(html_favicon_url = "https://locha.io/i/128.png")]
-
-pub mod discovery;
-pub mod gossip;
-pub mod identity;
-pub mod network;
-pub mod runtime;
-pub mod upnp;
-
-pub use libp2p::Multiaddr;
-pub use libp2p::PeerId;
-
-mod transport;
-pub use transport::build_transport;
+#![allow(clippy::redundant_static_lifetimes)]
+include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
