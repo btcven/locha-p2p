@@ -46,6 +46,7 @@
 //!
 //!     // Yes, allow discovery of private IPv4 adddresses
 //!     allow_ipv4_private: true,
+//!     allow_ipv4_shared: false,
 //!     allow_ipv6_link_local: true,
 //!     // Allow discovery of IPv6 unique local addresses which are used
 //!     // by Locha Mesh, cjdns and private networks not reachable on the
@@ -256,6 +257,7 @@ impl Runtime {
             .id(config.identity.id())
             .use_mdns(config.use_mdns)
             .allow_ipv4_private(config.allow_ipv4_private)
+            .allow_ipv4_shared(config.allow_ipv4_shared)
             .allow_ipv6_link_local(config.allow_ipv6_link_local)
             .allow_ipv6_ula(config.allow_ipv6_ula);
 

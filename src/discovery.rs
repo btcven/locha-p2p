@@ -40,6 +40,7 @@ pub struct DiscoveryBuilder {
     use_mdns: bool,
 
     allow_ipv4_private: bool,
+    allow_ipv4_shared: bool,
     allow_ipv6_link_local: bool,
     allow_ipv6_ula: bool,
     id: Option<PeerId>,
@@ -53,6 +54,7 @@ impl DiscoveryBuilder {
             use_mdns: false,
 
             allow_ipv4_private: false,
+            allow_ipv4_shared: false,
             allow_ipv6_link_local: false,
             allow_ipv6_ula: false,
             id: None,
@@ -74,6 +76,16 @@ impl DiscoveryBuilder {
     /// - 192.168.0.0/16
     pub fn allow_ipv4_private(&mut self, v: bool) -> &mut Self {
         self.allow_ipv4_private = v;
+        self
+    }
+
+    /// Allow IPv4 shared addresses?
+    ///
+    /// Addresses considered part of Shared Address Space:
+    ///
+    /// - 100.64.0.0/10
+    pub fn allow_ipv4_shared(&mut self, v: bool) -> &mut Self {
+        self.allow_ipv4_shared = v;
         self
     }
 
@@ -128,6 +140,7 @@ impl DiscoveryBuilder {
             pending_events: VecDeque::new(),
 
             allow_ipv4_private: self.allow_ipv4_private,
+            allow_ipv4_shared: self.allow_ipv4_shared,
             allow_ipv6_link_local: self.allow_ipv6_link_local,
             allow_ipv6_ula: self.allow_ipv6_ula,
         }
@@ -149,6 +162,7 @@ pub struct DiscoveryBehaviour {
     pending_events: VecDeque<DiscoveryEvent>,
 
     allow_ipv4_private: bool,
+    allow_ipv4_shared: bool,
     allow_ipv6_link_local: bool,
     allow_ipv6_ula: bool,
 }
@@ -157,6 +171,7 @@ impl DiscoveryBehaviour {
     #[rustfmt::skip]
     fn is_address_allowed(&self, addr: &Multiaddr) -> bool {
         (self.allow_ipv4_private && is_ipv4_private(&addr)) ||
+        (self.allow_ipv4_shared && is_ipv4_shared(&addr)) ||
         (self.allow_ipv6_link_local && is_ipv6_link_local(&addr)) ||
         (self.allow_ipv6_ula && is_ipv6_ula(addr))
     }
@@ -373,6 +388,23 @@ fn is_ipv4_private(addr: &Multiaddr) -> bool {
     let res = addr.iter().next().map(|p| {
         if let Protocol::Ip4(ipv4) = p {
             ipv4.is_private()
+        } else {
+            false
+        }
+    });
+
+    match res {
+        Some(v) => v,
+        None => false,
+    }
+}
+
+/// Is the multiaddress par of IPv4 Shared Address Space?
+fn is_ipv4_shared(addr: &Multiaddr) -> bool {
+    let res = addr.iter().next().map(|p| {
+        if let Protocol::Ip4(ipv4) = p {
+            ipv4.octets()[0] == 100
+                && (ipv4.octets()[1] & 0b1100_0000 == 0b0100_0000)
         } else {
             false
         }

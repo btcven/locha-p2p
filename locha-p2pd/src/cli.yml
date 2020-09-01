@@ -29,6 +29,9 @@ args:
     - allow-ipv4-private:
         long: allow-ipv4-private
         help: Enable discovery of IPv4 private addresses.
+    - allow-ipv4-shared:
+        long: allow-ipv4-shared
+        help: Enable discovery of IPv4 addresses that are part of Shared Address Space (100.64.0.0/10).
     - allow-ipv6-link-local:
         long: allow-ipv6-link-local
         help: Enable discovery of IPv6 link local addresses (fe80::/16).
