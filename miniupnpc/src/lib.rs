@@ -34,6 +34,8 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::os::raw::{c_char, c_int, c_uchar};
 
+use std::net::Ipv4Addr;
+use std::str::FromStr;
 use std::time::Duration;
 
 /// MiniUPnP API version
@@ -196,7 +198,7 @@ impl DeviceList {
             Some(ValidIgd {
                 urls: Urls(urls),
                 data: if is_igd { Some(IgdData(data)) } else { None },
-                lan_address,
+                lan_address: Ipv4Addr::from_str(lan_address.as_ref()).unwrap(),
                 connected: is_connected,
             })
         }
@@ -264,7 +266,7 @@ unsafe impl<'list> Send for Device<'list> {}
 pub struct ValidIgd {
     pub urls: Urls,
     pub data: Option<IgdData>,
-    pub lan_address: String,
+    pub lan_address: Ipv4Addr,
     pub connected: bool,
 }
 
@@ -383,6 +385,7 @@ impl fmt::Debug for IgdData {
 }
 
 unsafe impl Send for IgdData {}
+unsafe impl Sync for IgdData {}
 /// IGD service information
 pub struct IgdService<'a>(&'a miniupnpc_sys::IGDdatas_service);
 
@@ -419,12 +422,77 @@ impl<'a> fmt::Debug for IgdService<'a> {
 pub mod commands {
     use std::ffi::{CStr, CString};
     use std::os::raw::{c_char, c_int, c_uint};
+    use std::ptr;
 
     use std::net::Ipv4Addr;
     use std::str::FromStr;
     use std::time::Duration;
 
     use crate::Error;
+
+    #[derive(Debug, Clone, Eq, Copy, PartialEq)]
+    pub enum Protocol {
+        Tcp,
+        Udp,
+    }
+
+    /// Add port mapping
+    #[allow(non_snake_case)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_port_mapping<C, S, D>(
+        control_url: C,
+        service_type: S,
+        ext_port: u16,
+        in_port: u16,
+        in_client: Ipv4Addr,
+        desc: D,
+        proto: Protocol,
+        remote_host: Option<&str>,
+        lease_duration: Duration,
+    ) -> Result<(), Error>
+    where
+        C: AsRef<str>,
+        S: AsRef<str>,
+        D: AsRef<str>,
+    {
+        let controlURL = CString::new(control_url.as_ref()).unwrap();
+        let servicetype = CString::new(service_type.as_ref()).unwrap();
+        let extPort = CString::new(ext_port.to_string()).unwrap();
+        let inPort = CString::new(in_port.to_string()).unwrap();
+        let inClient = CString::new(in_client.to_string()).unwrap();
+        let desc = CString::new(desc.as_ref()).unwrap();
+        let proto = CString::new(match proto {
+            Protocol::Tcp => "TCP",
+            Protocol::Udp => "UDP",
+        })
+        .unwrap();
+        let remoteHost = remote_host.map(|v| CString::new(v).unwrap());
+        let leaseDuration =
+            CString::new(lease_duration.as_secs().to_string()).unwrap();
+
+        unsafe {
+            let ret = miniupnpc_sys::UPNP_AddPortMapping(
+                controlURL.as_c_str().as_ptr(),
+                servicetype.as_c_str().as_ptr(),
+                extPort.as_c_str().as_ptr(),
+                inPort.as_c_str().as_ptr(),
+                inClient.as_c_str().as_ptr(),
+                desc.as_c_str().as_ptr(),
+                proto.as_c_str().as_ptr(),
+                match remoteHost {
+                    Some(v) => v.as_c_str().as_ptr(),
+                    None => ptr::null(),
+                },
+                leaseDuration.as_c_str().as_ptr(),
+            );
+
+            if ret != miniupnpc_sys::UPNPCOMMAND_SUCCESS as c_int {
+                return Err(Error(ret));
+            }
+
+            Ok(())
+        }
+    }
 
     /// Get connection type information.
     #[allow(non_snake_case)]

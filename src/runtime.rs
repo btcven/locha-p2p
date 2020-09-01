@@ -24,8 +24,6 @@
 //! # Examples
 //!
 //! ```rust
-//! use std::net::Ipv4Addr;
-//!
 //! use locha_p2p::identity::Identity;
 //! use locha_p2p::runtime::Runtime;
 //! use locha_p2p::runtime::events::RuntimeEvents;
@@ -46,8 +44,6 @@
 //!     fn on_peer_discovered(&mut self, _: &PeerId, _addrs: Vec<Multiaddr>) {}
 //!
 //!     fn on_peer_unroutable(&mut self, _: &PeerId) {}
-//!
-//!     fn on_external_ipv4_addr(&mut self, _: &Ipv4Addr) {}
 //! }
 //!
 //! let config = RuntimeConfig {
@@ -84,6 +80,8 @@ pub mod events;
 pub mod sync_start_cond;
 
 use std::io;
+use std::iter::FromIterator;
+use std::time::Duration;
 
 use async_std::sync::{channel, Receiver, Sender};
 use async_std::task;
@@ -99,8 +97,6 @@ use libp2p::core::either::EitherError;
 
 use libp2p::{Multiaddr, PeerId};
 
-use void::Void;
-
 use log::{debug, error, info, trace, warn};
 
 use self::config::RuntimeConfig;
@@ -111,7 +107,6 @@ use self::sync_start_cond::{StartStatus, SyncStartCond};
 use crate::discovery::{DiscoveryBuilder, DiscoveryEvent};
 use crate::gossip::{GossipsubEvent, Topic};
 use crate::network::{Network, NetworkEvent};
-use crate::upnp::UpnpEvent;
 
 use crate::identity::Identity;
 use crate::transport::build_transport;
@@ -359,7 +354,7 @@ impl Runtime {
         swarm: &mut Swarm<Network>,
         swarm_event: &SwarmEvent<
             NetworkEvent,
-            EitherError<EitherError<io::Error, io::Error>, void::Void>,
+            EitherError<io::Error, io::Error>,
         >,
         events_handler: &mut dyn RuntimeEvents,
     ) {
@@ -450,6 +445,11 @@ impl Runtime {
                 );
             }
             SwarmEvent::NewListenAddr(ref address) => {
+                if let Some(external_addr) =
+                    Self::check_port_mapping(address).await
+                {
+                    events_handler.on_new_listen_addr(&external_addr);
+                }
                 events_handler.on_new_listen_addr(address)
             }
             SwarmEvent::ExpiredListenAddr(ref address) => {
@@ -525,11 +525,152 @@ impl Runtime {
                     events_handler.on_peer_unroutable(peer);
                 }
             },
-            NetworkEvent::Upnp(ref upnp) => match *upnp {
-                UpnpEvent::ExternalIpv4Address(ref ipv4) => {
-                    events_handler.on_external_ipv4_addr(ipv4);
+        }
+    }
+
+    async fn check_port_mapping(address: &Multiaddr) -> Option<Multiaddr> {
+        use libp2p::core::multiaddr::Protocol;
+
+        let mut parts = address.iter();
+        let our_ipv4 = match parts.next() {
+            Some(Protocol::Ip4(ref ip)) => {
+                if ip.is_private() {
+                    *ip
+                } else {
+                    debug!(
+                        target: "locha-p2p",
+                        "ignoring non private IPv4 address"
+                    );
+                    return None;
+                }
+            }
+            Some(_) => {
+                debug!(
+                    target: "locha-p2p",
+                    "ignoring non IPv4 protocol",
+                );
+                return None;
+            }
+            None => {
+                debug!(
+                    target: "locha-p2p",
+                    "address is empty",
+                );
+                return None;
+            }
+        };
+        let (protocol, port) = match parts.next() {
+            Some(ref proto) => match proto {
+                Protocol::Tcp(port) => (crate::upnp::Protocol::Tcp, *port),
+                Protocol::Udp(port) => (crate::upnp::Protocol::Udp, *port),
+                _ => {
+                    debug!(
+                        target: "locha-p2p",
+                        "ignoring address because it doesn't use TCP nor UDP",
+                    );
+                    return None;
                 }
             },
+            None => {
+                debug!(
+                    target: "locha-p2p",
+                        "ignoring address because it doesn't use TCP nor UDP",
+                );
+                return None;
+            }
+        };
+
+        let igd = match crate::upnp::discover_igd().await {
+            Ok(v) if v.is_some() => v.unwrap(),
+            Ok(_) => {
+                warn!(
+                    target: "locha-p2p",
+                    "no UPnP Internet Gateway Device found",
+                );
+                return None;
+            }
+            Err(e) => {
+                warn!(
+                    target: "locha-p2p",
+                    "could not find UPnP IGD: {}",
+                    e,
+                );
+                return None;
+            }
+        };
+
+        if igd.lan_address != our_ipv4 {
+            warn!(
+                target: "locha-p2p",
+                "our IPv4 address doesn't match the LAN address for the found IGD"
+            );
+            return None;
+        }
+
+        if igd.data.is_none() {
+            warn!(
+                target: "locha-p2p",
+                "found UPnP device but it isn't an IGD",
+            );
+            return None;
+        }
+        let igd_data = igd.data.unwrap();
+
+        info!(
+            target: "locha-p2p",
+            "mapping port {} on our addresss {}",
+            port, our_ipv4
+        );
+
+        let control_url = igd.urls.control_url().into_owned();
+        let service_type = igd_data.first().service_type().into_owned();
+
+        match crate::upnp::add_port_mapping(
+            control_url.clone(),
+            service_type.clone(),
+            port,
+            port,
+            igd.lan_address,
+            "locha-p2p",
+            protocol,
+            Duration::from_millis(0),
+        )
+        .await
+        {
+            Ok(_) => info!(
+                target: "locha-p2p",
+                "ports mapped using UPnP"
+            ),
+            Err(e) => warn!(
+                target: "locha-p2p",
+                "could not map ports using UPnP: {}",
+                e,
+            ),
+        };
+
+        match crate::upnp::get_external_ip_address(control_url, service_type)
+            .await
+        {
+            Ok(v) => {
+                info!("found external IP address {}", v);
+                let parts = vec![
+                    Protocol::Ip4(v),
+                    match protocol {
+                        crate::upnp::Protocol::Tcp => Protocol::Tcp(port),
+                        crate::upnp::Protocol::Udp => Protocol::Udp(port),
+                    },
+                ];
+
+                Some(Multiaddr::from_iter(parts))
+            }
+            Err(e) => {
+                warn!(
+                    target: "locha-p2p",
+                    "could not get external IPv4 address: {}",
+                    e
+                );
+                None
+            }
         }
     }
 }
@@ -577,9 +718,7 @@ fn log_connection_closed(
     num_established: u32,
     cause: &Option<
         ConnectionError<
-            NodeHandlerWrapperError<
-                EitherError<EitherError<io::Error, io::Error>, Void>,
-            >,
+            NodeHandlerWrapperError<EitherError<io::Error, io::Error>>,
         >,
     >,
 ) {
