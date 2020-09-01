@@ -29,6 +29,7 @@ use libp2p::multihash::{MultihashDigest, Sha2_256};
 
 use serde_derive::{Deserialize, Serialize};
 
+use locha_p2p::discovery::DiscoveryConfig;
 use locha_p2p::identity::Identity;
 use locha_p2p::runtime::config::RuntimeConfig;
 use locha_p2p::runtime::events::{RuntimeEvents, RuntimeEventsLogger};
@@ -142,17 +143,23 @@ fn main() {
         .expect("couldn't load identity file");
     info!("our peer id: {}", identity.id());
 
+    let mut discovery = DiscoveryConfig::new();
+
+    discovery
+        .use_mdns(arguments.use_mdns)
+        .id(identity.id())
+        .allow_ipv4_private(arguments.allow_ipv4_private)
+        .allow_ipv4_shared(arguments.allow_ipv4_shared)
+        .allow_ipv6_link_local(arguments.allow_ipv6_link_local)
+        .allow_ipv6_ula(arguments.allow_ipv6_ula);
+
     let config = RuntimeConfig {
         identity,
         channel_cap: 25,
         heartbeat_interval: 10,
         listen_addr: arguments.listen_addr,
 
-        use_mdns: arguments.use_mdns,
-        allow_ipv4_private: arguments.allow_ipv4_private,
-        allow_ipv4_shared: arguments.allow_ipv4_shared,
-        allow_ipv6_link_local: arguments.allow_ipv6_link_local,
-        allow_ipv6_ula: arguments.allow_ipv6_ula,
+        discovery: discovery,
     };
 
     let (sender, receiver) = channel::<Message>(10);

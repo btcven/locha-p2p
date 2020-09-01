@@ -14,8 +14,10 @@
 
 //! # Runtime configuration
 
-use crate::identity::Identity;
 use libp2p::Multiaddr;
+
+use crate::discovery::DiscoveryConfig;
+use crate::identity::Identity;
 
 #[derive(Debug)]
 pub struct RuntimeConfig {
@@ -24,9 +26,5 @@ pub struct RuntimeConfig {
     pub channel_cap: usize,
     pub heartbeat_interval: u64,
 
-    pub use_mdns: bool,
-    pub allow_ipv4_private: bool,
-    pub allow_ipv4_shared: bool,
-    pub allow_ipv6_link_local: bool,
-    pub allow_ipv6_ula: bool,
+    pub discovery: DiscoveryConfig,
 }

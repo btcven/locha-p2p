@@ -95,7 +95,7 @@ use self::error::Error;
 use self::events::RuntimeEvents;
 use self::sync_start_cond::{StartStatus, SyncStartCond};
 
-use crate::discovery::{DiscoveryBuilder, DiscoveryEvent};
+use crate::discovery::{DiscoveryBehaviour, DiscoveryEvent};
 use crate::gossip::{GossipsubEvent, Topic};
 use crate::network::{Network, NetworkEvent};
 
@@ -251,19 +251,6 @@ impl Runtime {
                 return Err(e.into());
             }
         };
-
-        let mut discovery = DiscoveryBuilder::new();
-
-        discovery
-            .id(config.identity.id())
-            .use_mdns(config.use_mdns)
-            .allow_ipv4_private(config.allow_ipv4_private)
-            .allow_ipv4_shared(config.allow_ipv4_shared)
-            .allow_ipv6_link_local(config.allow_ipv6_link_local)
-            .allow_ipv6_ula(config.allow_ipv6_ula);
-
-        let mut network =
-            Network::with_discovery(&config.identity, discovery.build());
 
         // Create a Gossipsub topic
         // TODO: Make topics dynamic per peer
