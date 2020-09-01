@@ -33,7 +33,6 @@ use locha_p2p::identity::Identity;
 use locha_p2p::runtime::config::RuntimeConfig;
 use locha_p2p::runtime::events::{RuntimeEvents, RuntimeEventsLogger};
 use locha_p2p::runtime::Runtime;
-use locha_p2p::{Multiaddr, PeerId};
 
 use log::{info, trace};
 
@@ -96,12 +95,6 @@ impl RuntimeEvents for EventsHandler {
             self.send_echo(message);
         }
     }
-
-    fn on_new_listen_addr(&mut self, _: &Multiaddr) {}
-
-    fn on_peer_discovered(&mut self, _: &PeerId, _: Vec<Multiaddr>) {}
-
-    fn on_peer_unroutable(&mut self, _: &PeerId) {}
 }
 
 #[derive(Deserialize, Serialize)]

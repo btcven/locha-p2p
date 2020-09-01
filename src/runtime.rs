@@ -36,14 +36,6 @@
 //!     fn on_new_message(&mut self, message: String) {
 //!         println!("new message: {}", message);
 //!     }
-//!
-//!     fn on_new_listen_addr(&mut self, addr: &Multiaddr) {
-//!         println!("new listen addr: {}", addr);
-//!     }
-//!
-//!     fn on_peer_discovered(&mut self, _: &PeerId, _addrs: Vec<Multiaddr>) {}
-//!
-//!     fn on_peer_unroutable(&mut self, _: &PeerId) {}
 //! }
 //!
 //! let config = RuntimeConfig {
@@ -89,13 +81,11 @@ use async_std::task;
 use futures::prelude::*;
 use futures::select;
 
-use libp2p::core::connection::{ConnectedPoint, ConnectionError};
-use libp2p::swarm::protocols_handler::NodeHandlerWrapperError;
 use libp2p::swarm::{NetworkBehaviour, Swarm, SwarmEvent};
 
 use libp2p::core::either::EitherError;
 
-use libp2p::{Multiaddr, PeerId};
+use libp2p::Multiaddr;
 
 use log::{debug, error, info, trace, warn};
 
@@ -370,10 +360,10 @@ impl Runtime {
                 ref endpoint,
                 ref num_established,
             } => {
-                log_connection_established(
-                    &peer_id,
-                    &endpoint,
-                    num_established.get(),
+                events_handler.on_connection_established(
+                    peer_id,
+                    endpoint,
+                    *num_established,
                 );
             }
             SwarmEvent::ConnectionClosed {
@@ -381,43 +371,35 @@ impl Runtime {
                 ref endpoint,
                 ref num_established,
                 ref cause,
-            } => {
-                log_connection_closed(
-                    &peer_id,
-                    &endpoint,
-                    *num_established,
-                    cause,
-                );
-            }
+            } => events_handler.on_connection_closed(
+                peer_id,
+                endpoint,
+                *num_established,
+                cause.as_ref().map(|e| e.to_string()),
+            ),
             SwarmEvent::IncomingConnection {
                 ref local_addr,
                 ref send_back_addr,
             } => {
-                info!(
-                    target: "locha-p2p",
-                    "Incoming connection on {}, with protocols for sending back {}",
-                    local_addr,
-                    send_back_addr
-                );
+                events_handler
+                    .on_incomming_connection(local_addr, send_back_addr);
             }
             SwarmEvent::IncomingConnectionError {
                 ref local_addr,
                 ref send_back_addr,
                 ref error,
             } => {
-                error!(
-                    target: "locha-p2p",
-                    "Incoming connection error on {}: {} \
-                    Protocols for sending back {}",
-                    local_addr, error, send_back_addr
+                events_handler.on_incomming_connection_error(
+                    local_addr,
+                    send_back_addr,
+                    error,
                 );
             }
-            SwarmEvent::BannedPeer { ref peer_id, .. } => {
-                info!(
-                    target: "locha-p2p",
-                    "Peer {} is banned",
-                    peer_id
-                );
+            SwarmEvent::BannedPeer {
+                ref peer_id,
+                ref endpoint,
+            } => {
+                events_handler.on_banned_peer(peer_id, endpoint);
             }
             SwarmEvent::UnreachableAddr {
                 ref peer_id,
@@ -425,24 +407,18 @@ impl Runtime {
                 ref error,
                 ref attempts_remaining,
             } => {
-                warn!(
-                    target: "locha-p2p",
-                    "Address {} for peer {} is unreachable. \
-                    Attempt failed with error {}. \
-                    Attempts remaining: {}",
-                    peer_id, address, error, attempts_remaining
+                events_handler.on_unreachable_addr(
+                    peer_id,
+                    address,
+                    error,
+                    *attempts_remaining,
                 );
             }
             SwarmEvent::UnknownPeerUnreachableAddr {
                 ref address,
                 ref error,
             } => {
-                warn!(
-                    target: "locha-p2p",
-                    "Unknown peer address {} is unreachable. \
-                    Attempt failed with error {}",
-                    address, error
-                );
+                events_handler.on_unknown_peer_unreachable_addr(address, error);
             }
             SwarmEvent::NewListenAddr(ref address) => {
                 if let Some(external_addr) =
@@ -453,45 +429,19 @@ impl Runtime {
                 events_handler.on_new_listen_addr(address)
             }
             SwarmEvent::ExpiredListenAddr(ref address) => {
-                info!(
-                    target: "locha-p2p",
-                    "Listening address {} expired",
-                    address
-                );
+                events_handler.on_expired_listen_addr(address);
             }
             SwarmEvent::ListenerClosed {
                 ref addresses,
                 ref reason,
             } => {
-                let mut affected = String::new();
-                for address in addresses {
-                    affected.push_str(format!(", {}\n", address).as_str())
-                }
-
-                match *reason {
-                    Ok(_) => {
-                        warn!(
-                            target: "locha-p2p",
-                            "Listener closed. \
-                            Addresses affected {}",
-                            affected,
-                        );
-                    }
-                    Err(ref e) => {
-                        warn!(
-                            target: "locha-p2p",
-                            "Listener closed. Reason {}. \
-                            Addresses affected: {}",
-                            e, affected,
-                        );
-                    }
-                }
+                events_handler.on_listener_closed(addresses.as_slice(), reason);
             }
             SwarmEvent::ListenerError { ref error } => {
-                error!(target: "locha-p2p", "Listener error {}", error);
+                events_handler.on_listener_error(error);
             }
-            SwarmEvent::Dialing(ref peer_id) => {
-                debug!(target: "locha-p2p", "Dialing peer {}", peer_id);
+            SwarmEvent::Dialing(ref peer) => {
+                events_handler.on_dialing(peer);
             }
         }
     }
@@ -678,94 +628,6 @@ impl Runtime {
 impl Default for Runtime {
     fn default() -> Runtime {
         Self::new()
-    }
-}
-
-/// Log when a connection is established to a peer.
-fn log_connection_established(
-    peer_id: &PeerId,
-    endpoint: &ConnectedPoint,
-    num_established: u32,
-) {
-    match endpoint {
-        ConnectedPoint::Dialer { address } => {
-            info!(
-                target: "locha-p2p",
-                "Outbound connection to peer {} on address {} succeed. \
-                Total number of established connections to peer are {}",
-                peer_id, address, num_established
-            );
-        }
-        ConnectedPoint::Listener {
-            local_addr,
-            send_back_addr,
-        } => {
-            info!(
-                target: "locha-p2p",
-                "Inbound connection to peer {} established on our address {} succeed. \
-                The stack of protocols for sending back to this peer are {}. \
-                Total number of established connections to this peer are {}",
-                peer_id, local_addr, send_back_addr, num_established
-            );
-        }
-    }
-}
-
-/// Log when a connection to a peer is closed.
-fn log_connection_closed(
-    peer_id: &PeerId,
-    endpoint: &ConnectedPoint,
-    num_established: u32,
-    cause: &Option<
-        ConnectionError<
-            NodeHandlerWrapperError<EitherError<io::Error, io::Error>>,
-        >,
-    >,
-) {
-    match endpoint {
-        ConnectedPoint::Dialer { address } => match cause {
-            Some(cause) => {
-                info!(
-                    target: "locha-p2p",
-                    "Outbound connection to peer {} on address {} failed. \
-                    The cause of the close is {}. \
-                    The number of remaining connections to peer {}",
-                    peer_id, address, cause, num_established
-                );
-            }
-            None => {
-                info!(
-                    target: "locha-p2p",
-                    "Outbound connection to peer {} on address {} failed. \
-                    The number of remaining connections to peer are {}",
-                    address, peer_id, num_established
-                );
-            }
-        },
-        ConnectedPoint::Listener {
-            local_addr,
-            send_back_addr,
-        } => match cause {
-            Some(cause) => {
-                info!(
-                    target: "locha-p2p",
-                    "Inbound connection from peer {} on our local address {} failed. \
-                    The cause of the close is {}. \
-                    The stack of protocols for sending back for this peer are {}. \
-                    The number of remaining connections to peer are {}",
-                    peer_id, local_addr, cause, send_back_addr, num_established
-                );
-            }
-            None => {
-                info!(
-                    target: "locha-p2p",
-                    "Inbound connection from peer {} on our local address {} failed. \
-                    The stack of protocols for sending back for this peer are {}. \
-                    The number of remaining connections to peer are {}",
-                    peer_id, local_addr, send_back_addr, num_established
-                );
-            }
-        },
     }
 }
 
