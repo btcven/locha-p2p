@@ -12,28 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Locha P2P
-//!
-//! This library contains the necessary code to set up a node that works
-//! with the Locha P2P Chat.
+//! # Synchronization primitives
 
-#![recursion_limit = "1024"]
-#![doc(html_logo_url = "https://locha.io/i/128.png")]
-#![doc(html_favicon_url = "https://locha.io/i/128.png")]
+mod start_cond;
+mod task_interrupt;
 
-pub mod discovery;
-pub mod gossip;
-pub mod identity;
-pub mod network;
-pub mod runtime;
-pub mod sync;
-pub mod upnp;
-
-pub use libp2p::Multiaddr;
-pub use libp2p::PeerId;
-
-mod transport;
-pub use transport::build_transport;
-
-/// Locha P2P swarm
-pub type Swarm = libp2p::Swarm<self::network::Network>;
+pub use self::start_cond::{StartCond, StartStatus};
+pub use self::task_interrupt::TaskInterrupt;

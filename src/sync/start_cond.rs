@@ -37,16 +37,16 @@ pub enum StartStatus {
 /// the network or take actions.
 ///
 /// The type is reference counted and thus, any clone will reference the
-/// same SyncStartCond.
+/// same StartCond.
 #[derive(Clone)]
-pub struct SyncStartCond {
+pub struct StartCond {
     inner: Arc<(Mutex<Option<StartStatus>>, Condvar)>,
 }
 
-impl SyncStartCond {
-    /// Create new `SyncStartCond`
-    pub fn new() -> SyncStartCond {
-        SyncStartCond {
+impl StartCond {
+    /// Create new `StartCond`
+    pub fn new() -> StartCond {
+        StartCond {
             inner: Arc::new((Mutex::new(None), Condvar::new())),
         }
     }
@@ -101,9 +101,9 @@ impl SyncStartCond {
     }
 }
 
-impl Default for SyncStartCond {
-    fn default() -> SyncStartCond {
-        SyncStartCond::new()
+impl Default for StartCond {
+    fn default() -> StartCond {
+        StartCond::new()
     }
 }
 
@@ -115,7 +115,7 @@ pub mod tests {
     fn start_status_ok() {
         use std::thread;
 
-        let cond = SyncStartCond::new();
+        let cond = StartCond::new();
         thread::spawn({
             let cond = cond.clone();
 
@@ -131,7 +131,7 @@ pub mod tests {
     fn start_status_err() {
         use std::thread;
 
-        let cond = SyncStartCond::new();
+        let cond = StartCond::new();
         thread::spawn({
             let cond = cond.clone();
 
