@@ -82,7 +82,7 @@ use async_std::task;
 use futures::prelude::*;
 use futures::select;
 
-use libp2p::swarm::{NetworkBehaviour, Swarm, SwarmEvent};
+use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 
 use libp2p::core::either::EitherError;
 
@@ -101,6 +101,7 @@ use crate::network::{Network, NetworkEvent};
 
 use crate::identity::Identity;
 use crate::transport::build_transport;
+use crate::Swarm;
 
 /// Gossipsub protocol name for Locha P2P Chat
 pub const CHAT_SERVICE_GOSSIP_PROTCOL_NAME: &[u8] = b"/locha-gossip/1.0.0";
@@ -343,7 +344,7 @@ impl Runtime {
     }
 
     async fn handle_swarm_event(
-        swarm: &mut Swarm<Network>,
+        swarm: &mut Swarm,
         swarm_event: &SwarmEvent<
             NetworkEvent,
             EitherError<io::Error, io::Error>,
@@ -450,7 +451,7 @@ impl Runtime {
 
     /// Handle gossipsub events
     async fn handle_behaviour_event(
-        swarm: &mut Swarm<Network>,
+        swarm: &mut Swarm,
         event: &NetworkEvent,
         events_handler: &mut dyn RuntimeEvents,
     ) {

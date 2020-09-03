@@ -33,3 +33,6 @@ pub use libp2p::PeerId;
 
 mod transport;
 pub use transport::build_transport;
+
+/// Locha P2P swarm
+pub type Swarm = libp2p::Swarm<self::network::Network>;
