@@ -37,3 +37,26 @@ pub use transport::build_transport;
 
 /// Locha P2P swarm
 pub type Swarm = libp2p::Swarm<self::network::Network>;
+
+/// Builds a swarm for Locha P2P
+///
+/// # Arguments
+///
+/// - `identity`: The node identity.
+/// - `discovery_config`: Configuration for [`crate::discovery::DiscoveryBehaviour`].
+///
+/// # Errors
+///
+/// This function might return an error if transport creation
+/// ([`build_transport`]) fails.
+pub fn build_swarm(
+    identity: &self::identity::Identity,
+    discovery_config: self::discovery::DiscoveryConfig,
+) -> Result<Swarm, std::io::Error> {
+    let transport = build_transport(&identity.keypair())?;
+    let discovery =
+        self::discovery::DiscoveryBehaviour::with_config(discovery_config);
+    let behaviour = self::network::Network::with_discovery(identity, discovery);
+
+    Ok(Swarm::new(transport, behaviour, identity.id()))
+}

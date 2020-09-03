@@ -72,8 +72,6 @@ pub mod error;
 pub mod events;
 
 use std::io;
-use std::iter::FromIterator;
-use std::time::Duration;
 
 use async_std::sync::{channel, Receiver, Sender};
 use async_std::task;
@@ -95,7 +93,7 @@ use self::events::RuntimeEvents;
 
 use crate::discovery::DiscoveryEvent;
 use crate::gossip::{GossipsubEvent, Topic};
-use crate::network::{Network, NetworkEvent};
+use crate::network::NetworkEvent;
 
 use crate::sync::{StartCond, StartStatus};
 
@@ -238,8 +236,11 @@ impl Runtime {
         config: RuntimeConfig,
         mut events_handler: Box<dyn RuntimeEvents>,
     ) -> Result<(), Error> {
-        let transport = match build_transport(&config.identity.keypair()) {
-            Ok(t) => t,
+        let mut swarm = match crate::build_swarm(
+            &config.identity,
+            config.discovery.clone(),
+        ) {
+            Ok(s) => s,
             Err(e) => {
                 error!(
                     target: "locha-p2p",
@@ -254,9 +255,8 @@ impl Runtime {
         // Create a Gossipsub topic
         // TODO: Make topics dynamic per peer
         let topic = Topic::new("locha-p2p-testnet".into());
-        network.subscribe(topic.clone());
+        swarm.subscribe(topic.clone());
 
-        let mut swarm = Swarm::new(transport, network, config.identity.id());
         match Swarm::listen_on(&mut swarm, config.listen_addr.clone()) {
             Ok(_) => (),
             Err(e) => {
