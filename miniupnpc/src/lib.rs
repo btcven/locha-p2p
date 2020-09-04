@@ -430,7 +430,7 @@ pub mod commands {
 
     use crate::Error;
 
-    #[derive(Debug, Clone, Eq, Copy, PartialEq)]
+    #[derive(Debug, Clone, Eq, Copy, PartialEq, Hash)]
     pub enum Protocol {
         Tcp,
         Udp,

@@ -17,7 +17,7 @@
 //! This library contains the necessary code to set up a node that works
 //! with the Locha P2P Chat.
 
-#![recursion_limit = "1024"]
+#![recursion_limit = "512"]
 #![doc(html_logo_url = "https://locha.io/i/128.png")]
 #![doc(html_favicon_url = "https://locha.io/i/128.png")]
 
@@ -26,7 +26,6 @@ pub mod gossip;
 pub mod identity;
 pub mod network;
 pub mod runtime;
-pub mod sync;
 pub mod upnp;
 
 pub use libp2p::Multiaddr;

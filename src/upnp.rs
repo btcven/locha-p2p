@@ -14,223 +14,181 @@
 
 //! # UPnP
 
+use std::collections::HashSet;
 use std::net::Ipv4Addr;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 use std::time::Duration;
 
-use async_std::task;
+use futures::channel::mpsc::{channel, Receiver, Sender};
+use futures::channel::oneshot::channel as oneshot_channel;
+use futures::channel::oneshot::Sender as OneshotSender;
+use futures::{Future, FutureExt, SinkExt, StreamExt};
 
-use futures::channel::mpsc::{channel, Receiver};
-use futures::future;
-use futures::stream::Stream;
-use futures::Future;
+use log::error;
 
-use log::{error, info, warn};
+pub use miniupnpc::commands::Protocol;
 
-use crate::sync::TaskInterrupt;
+pub const CHECK_PORT_INTERVALS_SECS: u64 = 1200;
 
-/// UPnP task
-///
-/// This UPnP task adds a map to the given port on certain timeouts. It only
-/// does any work when mapping the port. It also can return a future to resolve
-/// our external IPv4 address.
-///
-/// When no UPnP IGD is found the task will simply finish.
-#[derive(Debug)]
-pub struct UpnpTask {
-    interrupt: TaskInterrupt,
-    handle: Option<task::JoinHandle<()>>,
+#[derive(Debug, Clone)]
+pub struct Upnp {
+    tx: Sender<UpnpEvent>,
 }
 
-impl UpnpTask {
-    /// Create a new [`UpnpTask`]
-    ///
-    /// # Note
-    ///
-    /// The task _must_ be started using [`UpnpTask::start`].
-    pub fn new() -> UpnpTask {
-        UpnpTask {
-            interrupt: TaskInterrupt::new(),
-            handle: None,
-        }
+impl Upnp {
+    pub fn new() -> (Upnp, impl Future<Output = ()> + Send + 'static) {
+        let (tx, rx) = channel(5);
+        (Upnp { tx }, task(rx))
     }
 
-    /// Start the [`UpnpTask`].
-    ///
-    /// # Arguments
-    ///
-    /// - `port`: the port we want to map using UPnP.
-    /// - `discover`: whether we want to discover our external IPv4 address
-    /// with UPnP.
-    ///
-    /// # Return
-    ///
-    /// This method will return the [`UpnpTask`] handle to the running task
-    /// and maybe a [`ResolveAddress`] future if `discover` is true. Once
-    /// the address is found [`ResolveAddress`] future will resolve to
-    /// the given IPv4 address if found.
-    pub fn start(
-        &mut self,
+    pub async fn get_external_ip_address(&self) -> Option<Ipv4Addr> {
+        let (tx, rx) = oneshot_channel();
+        self.tx
+            .clone()
+            .send(UpnpEvent::GetExternalIPAddress(tx))
+            .await
+            .unwrap();
+        rx.await.unwrap()
+    }
+
+    pub async fn add_port_mapping(
+        &self,
+        desc: String,
+        proto: Protocol,
         port: u16,
-        discover: bool,
-    ) -> Option<ResolveAddress> {
-        // Create the MSPC channel for the resolution of the external
-        // IPv4 address when `discover` is true.
-        let (tx, rx) = if discover {
-            let chan = channel::<Option<Ipv4Addr>>(1);
-            (Some(chan.0), Some(chan.1))
-        } else {
-            (None, None)
-        };
+    ) {
+        self.tx
+            .clone()
+            .send(UpnpEvent::AddPortMapping(PortMap { desc, proto, port }))
+            .await
+            .unwrap()
+    }
 
-        let interrupt = TaskInterrupt::clone(&self.interrupt);
-        let handle = task::spawn(async move {
-            let interrupt = interrupt;
-            let tx = tx;
+    pub async fn stop(&self) {
+        self.tx.clone().send(UpnpEvent::Stop).await.unwrap()
+    }
+}
 
-            // Discover UPnP devices and retrieve an IGD if found.
-            let (urls, data, lanaddr) = match miniupnpc::discover(
-                Duration::from_secs(2),
-                None,
-                None,
-                miniupnpc::LocalPort::Any,
-                false,
-                2,
-            )
-            .map(|list| list.get_valid_igd())
-            {
-                Ok(Some(igd)) => {
-                    if igd.data.is_none() {
-                        error!(target: "locha-p2p", "UPnP: No valid IGDs found");
-                        return;
-                    }
+#[derive(Debug)]
+enum UpnpEvent {
+    Stop,
+    GetExternalIPAddress(OneshotSender<Option<Ipv4Addr>>),
+    AddPortMapping(PortMap),
+}
 
-                    (igd.urls, igd.data.unwrap(), igd.lan_address)
-                }
-                Ok(None) | Err(_) => {
-                    error!(target: "locha-p2p", "UPnP: No valid IGDs found");
-                    return;
-                }
-            };
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+struct PortMap {
+    desc: String,
+    proto: Protocol,
+    port: u16,
+}
 
-            // Retrieve External IPv4 address from UPnP IGD
-            if discover {
-                let ipaddr = miniupnpc::commands::get_external_ip_address(
-                    urls.control_url(),
-                    data.first().service_type(),
-                );
+async fn task(mut rx: Receiver<UpnpEvent>) {
+    let mut port_mappings: HashSet<PortMap> = HashSet::new();
+    let mut interval = async_std::stream::interval(Duration::from_secs(
+        CHECK_PORT_INTERVALS_SECS,
+    ));
 
-                match ipaddr {
-                    Ok(ip) => future::poll_fn({
-                        let mut tx = tx.unwrap();
-                        move |cx| match tx.poll_ready(cx) {
-                            Poll::Ready(Ok(_)) => {
-                                tx.start_send(Some(ip)).unwrap();
-                                Poll::Ready(())
-                            }
-                            Poll::Ready(Err(e)) => {
-                                if e.is_disconnected() {
-                                    warn!(
-                                        target: "locha-p2p",
-                                        "ResolveAddress future has been dropped"
-                                    );
+    loop {
+        futures::select_biased! {
+            event = rx.next().fuse() => {
+                let event = event.unwrap_or(UpnpEvent::Stop);
+
+                match event {
+                    UpnpEvent::GetExternalIPAddress(tx) => {
+                        match discover() {
+                            Ok(Some((urls, igd, _))) => {
+                                match miniupnpc::commands::get_external_ip_address(
+                                    urls.control_url(),
+                                    igd.first().service_type(),
+                                ) {
+                                    Ok(ip) => tx.send(Some(ip)).ok(),
+                                    Err(_) => tx.send(None).ok(),
                                 }
-                                Poll::Ready(())
                             }
-                            Poll::Pending => Poll::Pending,
+                            Ok(None) | Err(_) => tx.send(None).ok(),
+                        };
+                    }
+                    UpnpEvent::AddPortMapping(map) => {
+                        if port_mappings.get(&map).is_none() {
+                            port_mappings.insert(map.clone());
+                            match discover() {
+                                Ok(Some((urls, igd, lanaddr))) => {
+                                    miniupnpc::commands::add_port_mapping(
+                                        urls.control_url(),
+                                        igd.first().service_type(),
+                                        map.port,
+                                        map.port,
+                                        lanaddr,
+                                        map.desc,
+                                        map.proto,
+                                        None,
+                                        Duration::from_secs(0),
+                                    )
+                                    .ok();
+                                }
+                                Ok(None) | Err(_) => {}
+                            }
                         }
-                    })
-                    .await,
-                    Err(_) => {
-                        error!(target: "locha-p2p", "UPnP: GetExternalIPAddress failed");
                     }
+                    UpnpEvent::Stop => return,
+                };
+            },
+            _ = interval.next().fuse() => {
+                // If any port mapping, remap them because we don't know
+                // if the map was kept on the UPnP IGD, so... for reliability
+                // just remap again.
+                //
+                // This might actually help in the case the IGD is reset, or
+                // any other reason. Doing this each 20 mins (1200 s) does not
+                // hurts performance.
+                if port_mappings.len() > 0 {
+                    match discover() {
+                        Ok(Some((urls, igd, lanaddr))) => {
+                            for map in port_mappings.iter() {
+                                miniupnpc::commands::add_port_mapping(
+                                    urls.control_url(),
+                                    igd.first().service_type(),
+                                    map.port,
+                                    map.port,
+                                    lanaddr,
+                                    &map.desc,
+                                    map.proto,
+                                    None,
+                                    Duration::from_secs(0),
+                                )
+                                .ok();
+                            }
+                        }
+                        Ok(None) | Err(_) => (),
+                    };
                 }
             }
-
-            // Map the given port using AddPortMapping each 20 minutes.
-            // This can be stopped using `UpnpTask::stop(self)`.
-            loop {
-                match miniupnpc::commands::add_port_mapping(
-                    urls.control_url(),
-                    data.first().service_type(),
-                    port,
-                    port,
-                    lanaddr,
-                    "LochaP2P",
-                    miniupnpc::commands::Protocol::Tcp,
-                    None,
-                    Duration::from_millis(0),
-                ) {
-                    Ok(_) => {
-                        info!(
-                            target: "locha-p2p",
-                            "UPnP: Ports mapped successfully",
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            target: "locha-p2p",
-                            "UPnP: AddPortMapping({}, {}, {}, {}, {}, Tcp, None, 0) failed: {}",
-                            urls.control_url(),
-                            data.first().service_type(),
-                            port, port, lanaddr, e
-                        );
-                    }
-                }
-
-                // Wait 20 minutes or for an interrupt.
-                if !interrupt.sleep_for(Duration::from_secs(1200)).await {
-                    break;
-                }
-            }
-        });
-        self.handle = Some(handle);
-
-        if discover {
-            Some(ResolveAddress { rx: rx.unwrap() })
-        } else {
-            None
-        }
-    }
-
-    /// Stop the UPnP task
-    pub async fn stop(self) {
-        if let Some(handle) = self.handle {
-            self.interrupt.interrupt().await;
-            handle.await;
         }
     }
 }
 
-/// A future that will resolve to our external IPv4 address if found.
-///
-/// This future is created with [`UpnpTask::new`].
-///
-/// # Return
-///
-/// - `Some(ipv4)`: if external address was found.
-/// - `None`: if external address was not found.
-pub struct ResolveAddress {
-    rx: Receiver<Option<Ipv4Addr>>,
-}
+fn discover() -> Result<
+    Option<(miniupnpc::Urls, miniupnpc::IgdData, Ipv4Addr)>,
+    miniupnpc::Error,
+> {
+    match miniupnpc::discover(
+        Duration::from_secs(2),
+        None,
+        None,
+        miniupnpc::LocalPort::Any,
+        false,
+        2,
+    )
+    .map(|list| list.get_valid_igd())?
+    {
+        Some(igd) => {
+            if igd.data.is_none() {
+                error!(target: "locha-p2p", "UPnP: No valid IGDs found");
+                return Ok(None);
+            }
 
-impl Future for ResolveAddress {
-    type Output = Option<Ipv4Addr>;
-
-    /// See whether an address was found
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if polled againt after `Poll::Ready(_)`.
-    fn poll(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Self::Output> {
-        match Pin::new(&mut self.rx).poll_next(cx) {
-            Poll::Ready(Some(v)) => Poll::Ready(v),
-            Poll::Ready(None) => panic!("can't resolve again the future!"),
-            Poll::Pending => Poll::Pending,
+            Ok(Some((igd.urls, igd.data.unwrap(), igd.lan_address)))
         }
+        None => Ok(None),
     }
 }
