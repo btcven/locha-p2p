@@ -29,10 +29,12 @@ use libp2p::multihash::{MultihashDigest, Sha2_256};
 
 use serde_derive::{Deserialize, Serialize};
 
+use locha_p2p::discovery::DiscoveryConfig;
 use locha_p2p::identity::Identity;
 use locha_p2p::runtime::config::RuntimeConfig;
 use locha_p2p::runtime::events::{RuntimeEvents, RuntimeEventsLogger};
 use locha_p2p::runtime::Runtime;
+use locha_p2p::upnp::Upnp;
 
 use log::{info, trace};
 
@@ -127,7 +129,8 @@ struct Message {
     pub msg_id: String,
 }
 
-fn main() {
+#[async_std::main]
+async fn main() {
     env_logger::Builder::new()
         .filter_level(log::LevelFilter::Trace)
         .init();
@@ -136,11 +139,19 @@ fn main() {
     let matches = App::from_yaml(cli_yaml).get_matches();
     let arguments = Arguments::from_matches(&matches);
 
-    let mut runtime = Runtime::new();
-
     let identity = load_identity(&arguments.identity)
         .expect("couldn't load identity file");
     info!("our peer id: {}", identity.id());
+
+    let mut discovery = DiscoveryConfig::new();
+
+    discovery
+        .use_mdns(arguments.use_mdns)
+        .id(identity.id())
+        .allow_ipv4_private(arguments.allow_ipv4_private)
+        .allow_ipv4_shared(arguments.allow_ipv4_shared)
+        .allow_ipv6_link_local(arguments.allow_ipv6_link_local)
+        .allow_ipv6_ula(arguments.allow_ipv6_ula);
 
     let config = RuntimeConfig {
         identity,
@@ -148,11 +159,7 @@ fn main() {
         heartbeat_interval: 10,
         listen_addr: arguments.listen_addr,
 
-        use_mdns: arguments.use_mdns,
-        allow_ipv4_private: arguments.allow_ipv4_private,
-        allow_ipv4_shared: arguments.allow_ipv4_shared,
-        allow_ipv6_link_local: arguments.allow_ipv6_link_local,
-        allow_ipv6_ula: arguments.allow_ipv6_ula,
+        discovery: discovery,
     };
 
     let (sender, receiver) = channel::<Message>(10);
@@ -161,42 +168,49 @@ fn main() {
         echo: arguments.echo,
     };
 
-    runtime
-        .start(config, Box::new(RuntimeEventsLogger::new(events_handler)))
-        .expect("couldn't start chat service");
+    let (upnp, upnp_task) = Upnp::new();
+    let (runtime, runtime_task) = Runtime::new(
+        config,
+        Box::new(RuntimeEventsLogger::new(events_handler)),
+        Some(upnp.clone()),
+    )
+    .unwrap();
+
+    task::spawn(upnp_task);
+    task::spawn(runtime_task);
+
+    if let Some(ip) = upnp.get_external_ip_address().await {
+        info!(target: "locha-p2p", "UPnP: ExternalIPAddress={}", ip);
+    }
 
     // Reach out to another node if specified
     for to_dial in arguments.dials {
-        runtime.dial(to_dial).expect("couldn't dial peer");
+        runtime.dial(to_dial).await
     }
 
     let input = io::stdin();
     let channel = receiver;
 
-    task::block_on(async move {
-        loop {
-            let mut line = String::new();
-            select! {
-                _ = input.read_line(&mut line).fuse() => {
-                    if line == "exit\n" || line == "exit\r\n" || line == "exit\r" {
-                        break;
-                    }
-
-                    runtime
-                        .send_message(line)
-                        .expect("couldn't send message")
+    loop {
+        let mut line = String::new();
+        select! {
+            _ = input.read_line(&mut line).fuse() => {
+                if line == "exit\n" || line == "exit\r\n" || line == "exit\r" {
+                    break;
                 }
-                msg = channel.recv().fuse() => {
-                    if let Ok(ref msg) = msg {
-                        runtime.send_message(serde_json::to_string(msg).unwrap())
-                            .expect("couldn't send message")
-                    }
+
+                runtime
+                    .send_message(line).await
+            }
+            msg = channel.recv().fuse() => {
+                if let Ok(ref msg) = msg {
+                    runtime.send_message(serde_json::to_string(msg).unwrap()).await
                 }
             }
         }
+    }
 
-        runtime.stop().expect("couldn't stop chat service")
-    })
+    runtime.stop().await
 }
 
 fn load_identity(file: &Path) -> std::io::Result<Identity> {

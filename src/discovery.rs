@@ -35,8 +35,8 @@ use log::{debug, error, info};
 pub const LOCHA_KAD_PROTOCOL_NAME: &[u8] = b"/locha/kad/1.0.0";
 
 /// Builder for [`DiscoveryBehaviour`](struct.DiscoveryBehaviour.html).
-#[derive(Debug)]
-pub struct DiscoveryBuilder {
+#[derive(Debug, Clone)]
+pub struct DiscoveryConfig {
     use_mdns: bool,
 
     allow_ipv4_private: bool,
@@ -46,11 +46,11 @@ pub struct DiscoveryBuilder {
     id: Option<PeerId>,
 }
 
-impl DiscoveryBuilder {
+impl DiscoveryConfig {
     /// Create a new [`DiscoveryBehaviour`](struct.DiscoveryBehaviour.html)
     /// builder.
-    pub fn new() -> DiscoveryBuilder {
-        DiscoveryBuilder {
+    pub fn new() -> DiscoveryConfig {
+        DiscoveryConfig {
             use_mdns: false,
 
             allow_ipv4_private: false,
@@ -106,10 +106,28 @@ impl DiscoveryBuilder {
         self.id = Some(id);
         self
     }
+}
 
-    /// Build the discovery behaviour.
-    pub fn build(&mut self) -> DiscoveryBehaviour {
-        let id = self
+impl Default for DiscoveryConfig {
+    fn default() -> DiscoveryConfig {
+        DiscoveryConfig::new()
+    }
+}
+
+/// Discovery behaviour
+pub struct DiscoveryBehaviour {
+    /// Mdns to locate neighboring peers
+    mdns: Option<Mdns>,
+    /// Kademlia network behaviour
+    kademlia: Kademlia<MemoryStore>,
+    pending_events: VecDeque<DiscoveryEvent>,
+
+    config: DiscoveryConfig,
+}
+
+impl DiscoveryBehaviour {
+    pub fn with_config(config: DiscoveryConfig) -> DiscoveryBehaviour {
+        let id = config
             .id
             .clone()
             .expect("PeerId is necessary to participate in Peer Discovery");
@@ -118,7 +136,7 @@ impl DiscoveryBuilder {
         kad_config.set_protocol_name(LOCHA_KAD_PROTOCOL_NAME);
 
         DiscoveryBehaviour {
-            mdns: if self.use_mdns {
+            mdns: if config.use_mdns {
                 match Mdns::new() {
                     Ok(m) => {
                         info!(target: "locha-p2p", "using mDNS for peer discovery");
@@ -138,42 +156,17 @@ impl DiscoveryBuilder {
                 kad_config,
             ),
             pending_events: VecDeque::new(),
-
-            allow_ipv4_private: self.allow_ipv4_private,
-            allow_ipv4_shared: self.allow_ipv4_shared,
-            allow_ipv6_link_local: self.allow_ipv6_link_local,
-            allow_ipv6_ula: self.allow_ipv6_ula,
+            config,
         }
     }
 }
 
-impl Default for DiscoveryBuilder {
-    fn default() -> DiscoveryBuilder {
-        DiscoveryBuilder::new()
-    }
-}
-
-/// Discovery behaviour
-pub struct DiscoveryBehaviour {
-    /// Mdns to locate neighboring peers
-    mdns: Option<Mdns>,
-    /// Kademlia network behaviour
-    kademlia: Kademlia<MemoryStore>,
-    pending_events: VecDeque<DiscoveryEvent>,
-
-    allow_ipv4_private: bool,
-    allow_ipv4_shared: bool,
-    allow_ipv6_link_local: bool,
-    allow_ipv6_ula: bool,
-}
-
 impl DiscoveryBehaviour {
-    #[rustfmt::skip]
     fn is_address_allowed(&self, addr: &Multiaddr) -> bool {
-        (self.allow_ipv4_private && is_ipv4_private(&addr)) ||
-        (self.allow_ipv4_shared && is_ipv4_shared(&addr)) ||
-        (self.allow_ipv6_link_local && is_ipv6_link_local(&addr)) ||
-        (self.allow_ipv6_ula && is_ipv6_ula(addr))
+        (self.config.allow_ipv4_private && is_ipv4_private(&addr))
+            || (self.config.allow_ipv4_shared && is_ipv4_shared(&addr))
+            || (self.config.allow_ipv6_link_local && is_ipv6_link_local(&addr))
+            || (self.config.allow_ipv6_ula && is_ipv6_ula(addr))
     }
 }
 
@@ -207,15 +200,6 @@ impl NetworkBehaviour for DiscoveryBehaviour {
 
         if let Some(ref mut mdns) = self.mdns {
             for addr in mdns.addresses_of_peer(id) {
-                if !self.is_address_allowed(&addr) {
-                    debug!(
-                        target: "locha-p2p",
-                        "mDNS address {} not allowed",
-                        addr
-                    );
-                    continue;
-                }
-
                 ret.push(addr);
             }
         }
