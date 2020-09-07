@@ -186,6 +186,20 @@ impl Runtime {
 
         rx.await.unwrap()
     }
+
+    pub async fn external_addresses(&self) -> Vec<Multiaddr> {
+        trace!(target: "locha-p2p", "getting external addresses");
+
+        let (tx, rx) = oneshot_channel::<Vec<Multiaddr>>();
+
+        self.tx
+            .clone()
+            .send(RuntimeAction::ExternalAddresses(tx))
+            .await
+            .unwrap();
+
+        rx.await.unwrap()
+    }
 }
 
 /// Runtime action
@@ -194,6 +208,7 @@ enum RuntimeAction {
     Dial(Multiaddr),
     SendMessage(String),
     EnableUpnp(Upnp, OneshotSender<Result<(), &'static str>>),
+    ExternalAddresses(OneshotSender<Vec<Multiaddr>>),
 }
 
 async fn task(
@@ -261,6 +276,13 @@ async fn task(
                         } else {
                             tx.send(Err("UPnP has been already set")).ok();
                         }
+                    }
+                    RuntimeAction::ExternalAddresses(tx) => {
+                        let addrs: Vec<Multiaddr> = Swarm::external_addresses(&swarm)
+                            .map(|a| a.clone())
+                            .collect();
+
+                        tx.send(addrs).ok();
                     }
                 }
             },
