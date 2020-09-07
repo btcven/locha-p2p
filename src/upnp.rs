@@ -18,7 +18,7 @@ use std::collections::HashSet;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use futures::channel::mpsc::{channel, Receiver, Sender};
+use futures::channel::mpsc::{channel, Receiver, SendError, Sender};
 use futures::channel::oneshot::channel as oneshot_channel;
 use futures::channel::oneshot::Sender as OneshotSender;
 use futures::{Future, FutureExt, SinkExt, StreamExt};
@@ -40,14 +40,16 @@ impl Upnp {
         (Upnp { tx }, task(rx))
     }
 
-    pub async fn get_external_ip_address(&self) -> Option<Ipv4Addr> {
+    pub async fn get_external_ip_address(
+        &self,
+    ) -> Result<Option<Ipv4Addr>, SendError> {
         let (tx, rx) = oneshot_channel();
         self.tx
             .clone()
             .send(UpnpEvent::GetExternalIPAddress(tx))
-            .await
-            .unwrap();
-        rx.await.unwrap()
+            .await?;
+
+        Ok(rx.await.unwrap())
     }
 
     pub async fn add_port_mapping(
@@ -55,16 +57,15 @@ impl Upnp {
         desc: String,
         proto: Protocol,
         port: u16,
-    ) {
+    ) -> Result<(), SendError> {
         self.tx
             .clone()
             .send(UpnpEvent::AddPortMapping(PortMap { desc, proto, port }))
             .await
-            .unwrap()
     }
 
-    pub async fn stop(&self) {
-        self.tx.clone().send(UpnpEvent::Stop).await.unwrap()
+    pub async fn stop(&self) -> Result<(), SendError> {
+        self.tx.clone().send(UpnpEvent::Stop).await
     }
 }
 
