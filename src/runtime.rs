@@ -56,7 +56,7 @@
 //!     discovery,
 //! };
 //!
-//! let (runtime, runtime_task) = Runtime::new(config, Box::new(EventsHandler), None).unwrap();
+//! let (runtime, runtime_task) = Runtime::new(config, Box::new(EventsHandler), false).unwrap();
 //!
 //! async_std::task::spawn(runtime_task);
 //!
@@ -81,6 +81,7 @@ use futures::{Future, FutureExt, SinkExt, StreamExt};
 
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 
+use libp2p::identify::IdentifyEvent;
 use libp2p::multiaddr::Protocol;
 use libp2p::Multiaddr;
 
@@ -115,10 +116,11 @@ impl Runtime {
     pub fn new(
         config: RuntimeConfig,
         events_handler: Box<dyn RuntimeEvents>,
+        upnp: bool,
     ) -> Result<(Runtime, impl Future<Output = ()> + Send + 'static), Error>
     {
         let mut swarm =
-            build_swarm(&config.identity, config.discovery.clone())?;
+            build_swarm(&config.identity, config.discovery.clone(), upnp)?;
         // Create a Gossipsub topic
         // TODO: Make topics dynamic per peer
         let topic = Topic::new("locha-p2p-testnet".into());
@@ -393,6 +395,15 @@ fn handle_behaviour_event(
             DiscoveryEvent::UnroutablePeer(ref peer) => {
                 events_handler.on_peer_unroutable(peer);
             }
+        },
+        NetworkEvent::Identify(ref id_ev) => match **id_ev {
+            IdentifyEvent::Received {
+                ref observed_addr, ..
+            } => {
+                trace!(target: "locha-p2p", "observed addr {}", observed_addr);
+            }
+            IdentifyEvent::Sent { .. } => (),
+            IdentifyEvent::Error { .. } => (),
         },
     }
 }

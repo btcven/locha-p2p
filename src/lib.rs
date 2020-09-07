@@ -51,11 +51,13 @@ pub type Swarm = libp2p::Swarm<self::network::Network>;
 pub fn build_swarm(
     identity: &self::identity::Identity,
     discovery_config: self::discovery::DiscoveryConfig,
+    upnp: bool,
 ) -> Result<Swarm, std::io::Error> {
     let transport = build_transport(&identity.keypair())?;
     let discovery =
         self::discovery::DiscoveryBehaviour::with_config(discovery_config);
-    let behaviour = self::network::Network::with_discovery(identity, discovery);
+    let behaviour =
+        self::network::Network::with_discovery(identity, discovery, upnp);
 
     Ok(Swarm::new(transport, behaviour, identity.id()))
 }

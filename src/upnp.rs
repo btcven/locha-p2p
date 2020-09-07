@@ -96,18 +96,7 @@ async fn task(mut rx: Receiver<UpnpEvent>) {
 
                 match event {
                     UpnpEvent::GetExternalIPAddress(tx) => {
-                        match discover() {
-                            Ok(Some((urls, igd, _))) => {
-                                match miniupnpc::commands::get_external_ip_address(
-                                    urls.control_url(),
-                                    igd.first().service_type(),
-                                ) {
-                                    Ok(ip) => tx.send(Some(ip)).ok(),
-                                    Err(_) => tx.send(None).ok(),
-                                }
-                            }
-                            Ok(None) | Err(_) => tx.send(None).ok(),
-                        };
+                        tx.send(external_ip()).ok();
                     }
                     UpnpEvent::AddPortMapping(map) => {
                         if port_mappings.get(&map).is_none() {
@@ -191,5 +180,201 @@ fn discover() -> Result<
             Ok(Some((igd.urls, igd.data.unwrap(), igd.lan_address)))
         }
         None => Ok(None),
+    }
+}
+
+fn external_ip() -> Option<Ipv4Addr> {
+    if let Ok(Some((urls, igd, _))) = discover() {
+        miniupnpc::commands::get_external_ip_address(
+            urls.control_url(),
+            igd.first().service_type(),
+        )
+        .ok()
+    } else {
+        None
+    }
+}
+
+pub mod behaviour {
+    use super::external_ip;
+
+    use std::collections::{HashSet, VecDeque};
+    use std::iter::FromIterator;
+    use std::net::Ipv4Addr;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use std::time::Duration;
+
+    use futures::Future;
+
+    use libp2p::core::connection::ConnectionId;
+    use libp2p::core::multiaddr::Protocol;
+    use libp2p::swarm::protocols_handler::DummyProtocolsHandler;
+    use libp2p::swarm::PollParameters;
+    use libp2p::swarm::{NetworkBehaviour, NetworkBehaviourAction};
+    use libp2p::{Multiaddr, PeerId};
+
+    use wasm_timer::Delay;
+
+    use void::Void;
+
+    use log::trace;
+
+    pub struct UpnpBehaviour {
+        interval: Option<Delay>,
+        observed_addr: Option<Ipv4Addr>,
+        pending_actions: VecDeque<NetworkBehaviourAction<Void, Void>>,
+    }
+
+    impl UpnpBehaviour {
+        pub fn new() -> UpnpBehaviour {
+            UpnpBehaviour {
+                interval: None,
+                observed_addr: None,
+                pending_actions: VecDeque::new(),
+            }
+        }
+    }
+
+    impl Default for UpnpBehaviour {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl NetworkBehaviour for UpnpBehaviour {
+        type ProtocolsHandler = DummyProtocolsHandler;
+        type OutEvent = Void;
+
+        fn new_handler(&mut self) -> Self::ProtocolsHandler {
+            DummyProtocolsHandler::default()
+        }
+
+        fn addresses_of_peer(&mut self, _: &PeerId) -> Vec<Multiaddr> {
+            vec![]
+        }
+
+        fn inject_connected(&mut self, _: &PeerId) {}
+
+        fn inject_disconnected(&mut self, _: &PeerId) {}
+
+        fn inject_event(&mut self, _: PeerId, _: ConnectionId, ev: Void) {
+            match ev {}
+        }
+
+        fn poll(
+            &mut self,
+            cx: &mut Context<'_>,
+            params: &mut impl PollParameters,
+        ) -> Poll<NetworkBehaviourAction<Void, Void>> {
+            fn guess_ports(params: &impl PollParameters) -> HashSet<u16> {
+                let mut ports = HashSet::new();
+
+                for addr in params.listened_addresses() {
+                    let mut iter = addr.iter();
+
+                    let (ip, port) = (iter.next(), iter.next());
+
+                    if let (Some(Protocol::Ip4(_)), Some(Protocol::Tcp(port))) =
+                        (ip, port)
+                    {
+                        ports.insert(port);
+                    }
+                }
+
+                trace!(target: "locha-p2p", "ports: {:?}", ports);
+
+                ports
+            }
+
+            // Dispatch pending events first
+            if let Some(action) = self.pending_actions.pop_front() {
+                return Poll::Ready(action);
+            }
+
+            if self.interval.is_none() && self.observed_addr.is_none() {
+                let ports = guess_ports(params);
+                if ports.is_empty() {
+                    self.interval = Some(Delay::new(Duration::from_secs(1200)));
+                    return Poll::Pending;
+                }
+
+                self.observed_addr = external_ip();
+                self.interval = Some(Delay::new(Duration::from_secs(1200)));
+
+                if let Some(ref ip) = self.observed_addr {
+                    for port in ports {
+                        let parts =
+                            vec![Protocol::Ip4(*ip), Protocol::Tcp(port)];
+                        let address = Multiaddr::from_iter(parts);
+
+                        trace!(
+                            target: "locha-p2p",
+                            "observed address {}",
+                            address
+                        );
+
+                        self.pending_actions.push_back(
+                            NetworkBehaviourAction::ReportObservedAddr {
+                                address,
+                            },
+                        );
+                    }
+
+                    return Poll::Ready(
+                        self.pending_actions.pop_front().unwrap(),
+                    );
+                } else {
+                    return Poll::Pending;
+                }
+            }
+
+            let ports = guess_ports(params);
+            if self.interval.is_some() && !ports.is_empty() {
+                let interval = self.interval.as_mut().unwrap();
+
+                match Pin::new(interval).poll(cx) {
+                    Poll::Ready(_) => {
+                        trace!(target: "locha-p2p", "periodic check of external IP");
+                        let addr = external_ip();
+
+                        if addr.is_some() && self.observed_addr.is_some() {
+                            let new = addr.as_ref().unwrap();
+                            let old = addr.as_ref().unwrap();
+
+                            if new != old {
+                                self.observed_addr = addr;
+                            }
+                        }
+
+                        if let Some(ref ip) = self.observed_addr {
+                            for port in ports {
+                                let parts = vec![
+                                    Protocol::Ip4(*ip),
+                                    Protocol::Tcp(port),
+                                ];
+                                let address = Multiaddr::from_iter(parts);
+
+                                self.pending_actions.push_back(
+                                    NetworkBehaviourAction::ReportObservedAddr {
+                                        address,
+                                    },
+                                );
+                            }
+                        }
+
+                        self.interval =
+                            Some(Delay::new(Duration::from_secs(1200)));
+                    }
+                    Poll::Pending => (),
+                }
+            }
+
+            if let Some(action) = self.pending_actions.pop_front() {
+                return Poll::Ready(action);
+            }
+
+            Poll::Pending
+        }
     }
 }

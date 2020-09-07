@@ -178,6 +178,7 @@ async fn main() {
     let (runtime, runtime_task) = Runtime::new(
         config,
         Box::new(RuntimeEventsLogger::new(events_handler)),
+        true,
     )
     .unwrap();
 
