@@ -12,12 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use libp2p::identify::{Identify, IdentifyEvent};
+use libp2p::swarm::toggle::Toggle;
 use libp2p::NetworkBehaviour;
 
 use crate::discovery::{DiscoveryBehaviour, DiscoveryEvent};
 use crate::gossip::{Gossipsub, GossipsubEvent, PublishError, Topic};
+use crate::upnp::behaviour::UpnpBehaviour;
 
 use crate::identity::Identity;
+
+use void::Void;
 
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = false)]
@@ -25,16 +30,29 @@ use crate::identity::Identity;
 pub struct Network {
     discovery: DiscoveryBehaviour,
     gossip: Gossipsub,
+    upnp: Toggle<UpnpBehaviour>,
+    identify: Identify,
 }
 
 impl Network {
     pub fn with_discovery(
         identity: &Identity,
         discovery: DiscoveryBehaviour,
+        upnp: bool,
     ) -> Network {
         Network {
             discovery,
             gossip: crate::gossip::new(identity),
+            upnp: Toggle::from(if upnp {
+                Some(UpnpBehaviour::new())
+            } else {
+                None
+            }),
+            identify: Identify::new(
+                "/locha/identify/1.0.0".into(),
+                "Locha Mesh P2P 1.0.0".into(),
+                identity.keypair().public(),
+            ),
         }
     }
 
@@ -55,6 +73,7 @@ impl Network {
 pub enum NetworkEvent {
     Discovery(DiscoveryEvent),
     Gossipsub(Box<GossipsubEvent>),
+    Identify(Box<IdentifyEvent>),
 }
 
 impl From<DiscoveryEvent> for NetworkEvent {
@@ -66,5 +85,17 @@ impl From<DiscoveryEvent> for NetworkEvent {
 impl From<GossipsubEvent> for NetworkEvent {
     fn from(event: GossipsubEvent) -> NetworkEvent {
         NetworkEvent::Gossipsub(Box::new(event))
+    }
+}
+
+impl From<Void> for NetworkEvent {
+    fn from(event: Void) -> NetworkEvent {
+        match event {}
+    }
+}
+
+impl From<IdentifyEvent> for NetworkEvent {
+    fn from(event: IdentifyEvent) -> NetworkEvent {
+        NetworkEvent::Identify(Box::new(event))
     }
 }

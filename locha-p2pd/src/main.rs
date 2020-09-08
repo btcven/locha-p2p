@@ -159,7 +159,7 @@ async fn main() {
         heartbeat_interval: 10,
         listen_addr: arguments.listen_addr,
 
-        discovery: discovery,
+        discovery,
     };
 
     let (sender, receiver) = channel::<Message>(10);
@@ -169,24 +169,28 @@ async fn main() {
     };
 
     let (upnp, upnp_task) = Upnp::new();
+    task::spawn(upnp_task);
+
+    if let Some(ip) = upnp.get_external_ip_address().await.unwrap() {
+        info!(target: "locha-p2p", "UPnP: ExternalIPAddress={}", ip);
+    }
+
     let (runtime, runtime_task) = Runtime::new(
         config,
         Box::new(RuntimeEventsLogger::new(events_handler)),
-        Some(upnp.clone()),
+        true,
     )
     .unwrap();
 
-    task::spawn(upnp_task);
     task::spawn(runtime_task);
-
-    if let Some(ip) = upnp.get_external_ip_address().await {
-        info!(target: "locha-p2p", "UPnP: ExternalIPAddress={}", ip);
-    }
 
     // Reach out to another node if specified
     for to_dial in arguments.dials {
         runtime.dial(to_dial).await
     }
+
+    // Enable UPnP port mapping
+    runtime.enable_upnp(upnp).await.unwrap();
 
     let input = io::stdin();
     let channel = receiver;

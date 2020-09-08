@@ -56,7 +56,7 @@
 //!     discovery,
 //! };
 //!
-//! let (runtime, runtime_task) = Runtime::new(config, Box::new(EventsHandler), None).unwrap();
+//! let (runtime, runtime_task) = Runtime::new(config, Box::new(EventsHandler), false).unwrap();
 //!
 //! async_std::task::spawn(runtime_task);
 //!
@@ -73,11 +73,15 @@ pub mod config;
 pub mod error;
 pub mod events;
 
-use futures::channel::mpsc::{channel, Receiver, Sender};
+use futures::channel::mpsc::{channel, Receiver, SendError, Sender};
+use futures::channel::oneshot::{
+    channel as oneshot_channel, Sender as OneshotSender,
+};
 use futures::{Future, FutureExt, SinkExt, StreamExt};
 
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 
+use libp2p::identify::IdentifyEvent;
 use libp2p::multiaddr::Protocol;
 use libp2p::Multiaddr;
 
@@ -112,11 +116,11 @@ impl Runtime {
     pub fn new(
         config: RuntimeConfig,
         events_handler: Box<dyn RuntimeEvents>,
-        upnp: Option<Upnp>,
+        upnp: bool,
     ) -> Result<(Runtime, impl Future<Output = ()> + Send + 'static), Error>
     {
         let mut swarm =
-            build_swarm(&config.identity, config.discovery.clone())?;
+            build_swarm(&config.identity, config.discovery.clone(), upnp)?;
         // Create a Gossipsub topic
         // TODO: Make topics dynamic per peer
         let topic = Topic::new("locha-p2p-testnet".into());
@@ -136,7 +140,7 @@ impl Runtime {
 
         let (tx, rx) = channel(config.channel_cap);
 
-        Ok((Runtime { tx }, task(swarm, events_handler, topic, rx, upnp)))
+        Ok((Runtime { tx }, task(swarm, events_handler, topic, rx)))
     }
 
     /// Stop the runtime.
@@ -168,16 +172,43 @@ impl Runtime {
             .await
             .unwrap()
     }
+
+    pub async fn enable_upnp(&self, upnp: Upnp) -> Result<(), &'static str> {
+        trace!(target: "locha-p2p", "enabling UPnP");
+
+        let (tx, rx) = oneshot_channel::<Result<(), &'static str>>();
+
+        self.tx
+            .clone()
+            .send(RuntimeAction::EnableUpnp(upnp, tx))
+            .await
+            .unwrap();
+
+        rx.await.unwrap()
+    }
+
+    pub async fn external_addresses(&self) -> Vec<Multiaddr> {
+        trace!(target: "locha-p2p", "getting external addresses");
+
+        let (tx, rx) = oneshot_channel::<Vec<Multiaddr>>();
+
+        self.tx
+            .clone()
+            .send(RuntimeAction::ExternalAddresses(tx))
+            .await
+            .unwrap();
+
+        rx.await.unwrap()
+    }
 }
 
 /// Runtime action
 enum RuntimeAction {
-    /// Send a message
-    SendMessage(String),
-    /// Dial a peer
-    Dial(Multiaddr),
-    /// Stop the chat service
     Stop,
+    Dial(Multiaddr),
+    SendMessage(String),
+    EnableUpnp(Upnp, OneshotSender<Result<(), &'static str>>),
+    ExternalAddresses(OneshotSender<Vec<Multiaddr>>),
 }
 
 async fn task(
@@ -185,8 +216,9 @@ async fn task(
     mut events_handler: Box<dyn RuntimeEvents>,
     topic: Topic,
     mut rx: Receiver<RuntimeAction>,
-    upnp: Option<Upnp>,
 ) {
+    let mut upnp = None;
+
     loop {
         trace!(target: "locha-p2p", "loop");
 
@@ -219,10 +251,43 @@ async fn task(
                             );
                         }
                     }
+                    RuntimeAction::EnableUpnp(upnp_ref, tx) => {
+                        if upnp.is_none() {
+                            upnp = Some(upnp_ref);
+
+                            let addrs: Vec<Multiaddr> = Swarm::listeners(&swarm)
+                                .map(|a| a.clone())
+                                .collect();
+
+                            let mut ok = true;
+                            'map: for addr in addrs {
+                                if check_port_mapping(upnp.as_ref().unwrap(), &addr).await.is_err() {
+                                    upnp = None;
+                                    ok = false;
+                                    break 'map;
+                                }
+                            }
+
+                            if ok {
+                                tx.send(Ok(())).ok();
+                            } else {
+                                tx.send(Err("UPnP handle is invalid")).ok();
+                            }
+                        } else {
+                            tx.send(Err("UPnP has been already set")).ok();
+                        }
+                    }
+                    RuntimeAction::ExternalAddresses(tx) => {
+                        let addrs: Vec<Multiaddr> = Swarm::external_addresses(&swarm)
+                            .map(|a| a.clone())
+                            .collect();
+
+                        tx.send(addrs).ok();
+                    }
                 }
             },
             ev = swarm.next_event().fuse() => {
-                handle_event(&mut swarm, upnp.as_ref(), &mut *events_handler, &ev).await;
+                handle_event(&mut swarm, &mut upnp, &mut *events_handler, &ev).await;
             },
         }
     }
@@ -230,7 +295,7 @@ async fn task(
 
 async fn handle_event<THandleErr: std::error::Error>(
     swarm: &mut Swarm,
-    upnp: Option<&Upnp>,
+    upnp: &mut Option<Upnp>,
     events_handler: &mut dyn RuntimeEvents,
     swarm_event: &SwarmEvent<NetworkEvent, THandleErr>,
 ) {
@@ -303,8 +368,11 @@ async fn handle_event<THandleErr: std::error::Error>(
             events_handler.on_unknown_peer_unreachable_addr(address, error);
         }
         SwarmEvent::NewListenAddr(ref address) => {
-            if let Some(upnp) = upnp {
-                check_port_mapping(upnp, address).await;
+            if let Some(u) = upnp {
+                if check_port_mapping(u, address).await.is_err() {
+                    // Receiver was dropped, so we'll drop the handle to it.
+                    *upnp = None;
+                }
             }
             events_handler.on_new_listen_addr(address)
         }
@@ -350,10 +418,22 @@ fn handle_behaviour_event(
                 events_handler.on_peer_unroutable(peer);
             }
         },
+        NetworkEvent::Identify(ref id_ev) => match **id_ev {
+            IdentifyEvent::Received {
+                ref observed_addr, ..
+            } => {
+                trace!(target: "locha-p2p", "observed addr {}", observed_addr);
+            }
+            IdentifyEvent::Sent { .. } => (),
+            IdentifyEvent::Error { .. } => (),
+        },
     }
 }
 
-async fn check_port_mapping(upnp: &Upnp, address: &Multiaddr) {
+async fn check_port_mapping(
+    upnp: &Upnp,
+    address: &Multiaddr,
+) -> Result<(), SendError> {
     use crate::upnp::Protocol as UpnpProtocol;
 
     trace!(target: "locha-p2p", "checking port mapping for {}", address);
@@ -369,7 +449,7 @@ async fn check_port_mapping(upnp: &Upnp, address: &Multiaddr) {
         (Some(Protocol::Ip4(_)), Some(Protocol::Udp(port))) => {
             (port, UpnpProtocol::Udp)
         }
-        _ => return,
+        _ => return Ok(()),
     };
 
     // Add port mapping using UPnP.
@@ -378,5 +458,5 @@ async fn check_port_mapping(upnp: &Upnp, address: &Multiaddr) {
         proto,
         port,
     )
-    .await;
+    .await
 }
