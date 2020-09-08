@@ -95,6 +95,7 @@ use crate::discovery::DiscoveryEvent;
 use crate::gossip::{GossipsubEvent, Topic};
 use crate::network::NetworkEvent;
 use crate::upnp::Upnp;
+use crate::PeerId;
 use crate::{build_swarm, Swarm};
 
 /// Locha P2P runtime
@@ -200,6 +201,19 @@ impl Runtime {
 
         rx.await.unwrap()
     }
+
+    pub async fn peer_id(&self) -> PeerId {
+        trace!(target: "locha-p2p", "getting peer ID");
+
+        let (tx, rx) = oneshot_channel::<PeerId>();
+        self.tx
+            .clone()
+            .send(RuntimeAction::PeerId(tx))
+            .await
+            .unwrap();
+
+        rx.await.unwrap()
+    }
 }
 
 /// Runtime action
@@ -209,6 +223,7 @@ enum RuntimeAction {
     SendMessage(String),
     EnableUpnp(Upnp, OneshotSender<Result<(), &'static str>>),
     ExternalAddresses(OneshotSender<Vec<Multiaddr>>),
+    PeerId(OneshotSender<PeerId>),
 }
 
 async fn task(
@@ -283,6 +298,9 @@ async fn task(
                             .collect();
 
                         tx.send(addrs).ok();
+                    }
+                    RuntimeAction::PeerId(tx) => {
+                        tx.send(Swarm::local_peer_id(&swarm).clone()).ok();
                     }
                 }
             },
