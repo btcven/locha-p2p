@@ -48,6 +48,19 @@ pub type Swarm = libp2p::Swarm<self::network::Network>;
 ///
 /// This function might return an error if transport creation
 /// ([`build_transport`]) fails.
+///
+/// # Example
+///
+/// ```rust
+/// use locha_p2p::identity::Identity;
+/// use locha_p2p::discovery::DiscoveryConfig;
+///
+/// let id = Identity::generate();
+/// let mut discovery = DiscoveryConfig::new();
+/// discovery.id(id.id());
+///
+/// let _swarm = locha_p2p::build_swarm(&id, discovery, false).unwrap();
+/// ```
 pub fn build_swarm(
     identity: &self::identity::Identity,
     discovery_config: self::discovery::DiscoveryConfig,
