@@ -34,7 +34,6 @@ use locha_p2p::identity::Identity;
 use locha_p2p::runtime::config::RuntimeConfig;
 use locha_p2p::runtime::events::{RuntimeEvents, RuntimeEventsLogger};
 use locha_p2p::runtime::Runtime;
-use locha_p2p::upnp::Upnp;
 
 use log::{info, trace};
 
@@ -168,13 +167,6 @@ async fn main() {
         echo: arguments.echo,
     };
 
-    let (upnp, upnp_task) = Upnp::new();
-    task::spawn(upnp_task);
-
-    if let Some(ip) = upnp.get_external_ip_address().await.unwrap() {
-        info!(target: "locha-p2p", "UPnP: ExternalIPAddress={}", ip);
-    }
-
     let (runtime, runtime_task) = Runtime::new(
         config,
         Box::new(RuntimeEventsLogger::new(events_handler)),
@@ -188,9 +180,6 @@ async fn main() {
     for to_dial in arguments.dials {
         runtime.dial(to_dial).await
     }
-
-    // Enable UPnP port mapping
-    runtime.enable_upnp(upnp).await.unwrap();
 
     let input = io::stdin();
     let channel = receiver;

@@ -29,7 +29,6 @@
 //! use locha_p2p::runtime::events::RuntimeEvents;
 //! use locha_p2p::runtime::config::RuntimeConfig;
 //! use locha_p2p::runtime::Runtime;
-//! use locha_p2p::upnp::Upnp;
 //! use locha_p2p::{Multiaddr, PeerId};
 //!
 //! struct EventsHandler;
@@ -73,7 +72,7 @@ pub mod config;
 pub mod error;
 pub mod events;
 
-use futures::channel::mpsc::{channel, Receiver, SendError, Sender};
+use futures::channel::mpsc::{channel, Receiver, Sender};
 use futures::channel::oneshot::{
     channel as oneshot_channel, Sender as OneshotSender,
 };
@@ -82,7 +81,6 @@ use futures::{Future, FutureExt, SinkExt, StreamExt};
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 
 use libp2p::identify::IdentifyEvent;
-use libp2p::multiaddr::Protocol;
 use libp2p::Multiaddr;
 
 use log::{error, trace};
@@ -94,7 +92,6 @@ use self::events::RuntimeEvents;
 use crate::discovery::DiscoveryEvent;
 use crate::gossip::{GossipsubEvent, Topic};
 use crate::network::NetworkEvent;
-use crate::upnp::Upnp;
 use crate::PeerId;
 use crate::{build_swarm, Swarm};
 
@@ -174,20 +171,6 @@ impl Runtime {
             .unwrap()
     }
 
-    pub async fn enable_upnp(&self, upnp: Upnp) -> Result<(), &'static str> {
-        trace!(target: "locha-p2p", "enabling UPnP");
-
-        let (tx, rx) = oneshot_channel::<Result<(), &'static str>>();
-
-        self.tx
-            .clone()
-            .send(RuntimeAction::EnableUpnp(upnp, tx))
-            .await
-            .unwrap();
-
-        rx.await.unwrap()
-    }
-
     pub async fn external_addresses(&self) -> Vec<Multiaddr> {
         trace!(target: "locha-p2p", "getting external addresses");
 
@@ -221,7 +204,6 @@ enum RuntimeAction {
     Stop,
     Dial(Multiaddr),
     SendMessage(String),
-    EnableUpnp(Upnp, OneshotSender<Result<(), &'static str>>),
     ExternalAddresses(OneshotSender<Vec<Multiaddr>>),
     PeerId(OneshotSender<PeerId>),
 }
@@ -232,8 +214,6 @@ async fn task(
     topic: Topic,
     mut rx: Receiver<RuntimeAction>,
 ) {
-    let mut upnp = None;
-
     loop {
         trace!(target: "locha-p2p", "loop");
 
@@ -266,32 +246,6 @@ async fn task(
                             );
                         }
                     }
-                    RuntimeAction::EnableUpnp(upnp_ref, tx) => {
-                        if upnp.is_none() {
-                            upnp = Some(upnp_ref);
-
-                            let addrs: Vec<Multiaddr> = Swarm::listeners(&swarm)
-                                .map(|a| a.clone())
-                                .collect();
-
-                            let mut ok = true;
-                            'map: for addr in addrs {
-                                if check_port_mapping(upnp.as_ref().unwrap(), &addr).await.is_err() {
-                                    upnp = None;
-                                    ok = false;
-                                    break 'map;
-                                }
-                            }
-
-                            if ok {
-                                tx.send(Ok(())).ok();
-                            } else {
-                                tx.send(Err("UPnP handle is invalid")).ok();
-                            }
-                        } else {
-                            tx.send(Err("UPnP has been already set")).ok();
-                        }
-                    }
                     RuntimeAction::ExternalAddresses(tx) => {
                         let addrs: Vec<Multiaddr> = Swarm::external_addresses(&swarm)
                             .map(|a| a.clone())
@@ -305,7 +259,7 @@ async fn task(
                 }
             },
             ev = swarm.next_event().fuse() => {
-                handle_event(&mut swarm, &mut upnp, &mut *events_handler, &ev).await;
+                handle_event(&mut swarm, &mut *events_handler, &ev).await;
             },
         }
     }
@@ -313,7 +267,6 @@ async fn task(
 
 async fn handle_event<THandleErr: std::error::Error>(
     swarm: &mut Swarm,
-    upnp: &mut Option<Upnp>,
     events_handler: &mut dyn RuntimeEvents,
     swarm_event: &SwarmEvent<NetworkEvent, THandleErr>,
 ) {
@@ -386,12 +339,6 @@ async fn handle_event<THandleErr: std::error::Error>(
             events_handler.on_unknown_peer_unreachable_addr(address, error);
         }
         SwarmEvent::NewListenAddr(ref address) => {
-            if let Some(u) = upnp {
-                if check_port_mapping(u, address).await.is_err() {
-                    // Receiver was dropped, so we'll drop the handle to it.
-                    *upnp = None;
-                }
-            }
             events_handler.on_new_listen_addr(address)
         }
         SwarmEvent::ExpiredListenAddr(ref address) => {
@@ -446,35 +393,4 @@ fn handle_behaviour_event(
             IdentifyEvent::Error { .. } => (),
         },
     }
-}
-
-async fn check_port_mapping(
-    upnp: &Upnp,
-    address: &Multiaddr,
-) -> Result<(), SendError> {
-    use crate::upnp::Protocol as UpnpProtocol;
-
-    trace!(target: "locha-p2p", "checking port mapping for {}", address);
-
-    let mut iter = address.iter();
-    let ip = iter.next();
-    let proto = iter.next();
-
-    let (port, proto) = match (ip, proto) {
-        (Some(Protocol::Ip4(_)), Some(Protocol::Tcp(port))) => {
-            (port, UpnpProtocol::Tcp)
-        }
-        (Some(Protocol::Ip4(_)), Some(Protocol::Udp(port))) => {
-            (port, UpnpProtocol::Udp)
-        }
-        _ => return Ok(()),
-    };
-
-    // Add port mapping using UPnP.
-    upnp.add_port_mapping(
-        format!("Locha P2P {}", env!("CARGO_PKG_VERSION")),
-        proto,
-        port,
-    )
-    .await
 }

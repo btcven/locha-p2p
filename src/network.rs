@@ -18,11 +18,14 @@ use libp2p::NetworkBehaviour;
 
 use crate::discovery::{DiscoveryBehaviour, DiscoveryEvent};
 use crate::gossip::{Gossipsub, GossipsubEvent, PublishError, Topic};
-use crate::upnp::behaviour::UpnpBehaviour;
+use crate::upnp::UpnpBehaviour;
 
 use crate::identity::Identity;
 
 use void::Void;
+
+/// Node/agent version string.
+pub const AGENT_VERSION: &str = "Locha Mesh P2P 1.0.0";
 
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = false)]
@@ -44,13 +47,13 @@ impl Network {
             discovery,
             gossip: crate::gossip::new(identity),
             upnp: Toggle::from(if upnp {
-                Some(UpnpBehaviour::new())
+                Some(UpnpBehaviour::new(AGENT_VERSION.into()))
             } else {
                 None
             }),
             identify: Identify::new(
                 "/locha/identify/1.0.0".into(),
-                "Locha Mesh P2P 1.0.0".into(),
+                AGENT_VERSION.into(),
                 identity.keypair().public(),
             ),
         }
