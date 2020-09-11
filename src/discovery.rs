@@ -406,3 +406,34 @@ fn is_ipv6_ula(addr: &Multiaddr) -> bool {
         None => false,
     }
 }
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_ipv4_prviate() {
+        assert!(is_ipv4_private(&"/ip4/192.168.0.1".parse().unwrap()));
+        assert!(is_ipv4_private(&"/ip4/172.16.0.1".parse().unwrap()));
+        assert!(is_ipv4_private(&"/ip4/10.0.0.1".parse().unwrap()));
+        assert!(!is_ipv4_private(&"/ip4/186.200.4.1".parse().unwrap()));
+        assert!(!is_ipv4_private(&"/ip4/100.62.64.1".parse().unwrap()));
+        assert!(!is_ipv4_private(&"/dns/p2p.locha.io".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_ipv4_shared() {
+        assert!(is_ipv4_shared(&"/ip4/100.80.72.1".parse().unwrap()));
+        assert!(!is_ipv4_shared(&"/ip4/186.200.4.1".parse().unwrap()));
+        assert!(!is_ipv4_shared(&"/dns/p2p.locha.io".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_ipv6_is_ula() {
+        assert!(is_ipv6_ula(&"/ip6/fc00::1".parse().unwrap()));
+        assert!(is_ipv6_ula(&"/ip6/fc20::1".parse().unwrap()));
+        assert!(is_ipv6_ula(&"/ip6/fd00::1".parse().unwrap()));
+        assert!(!is_ipv6_ula(&"/ip6/2001::1".parse().unwrap()));
+        assert!(!is_ipv6_ula(&"/dns/p2p.locha.io".parse().unwrap()));
+    }
+}

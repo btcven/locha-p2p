@@ -29,7 +29,6 @@ pub struct Arguments {
     pub use_mdns: bool,
     pub allow_ipv4_private: bool,
     pub allow_ipv4_shared: bool,
-    pub allow_ipv6_link_local: bool,
     pub allow_ipv6_ula: bool,
 }
 
