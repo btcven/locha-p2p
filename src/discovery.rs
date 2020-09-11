@@ -41,7 +41,6 @@ pub struct DiscoveryConfig {
 
     allow_ipv4_private: bool,
     allow_ipv4_shared: bool,
-    allow_ipv6_link_local: bool,
     allow_ipv6_ula: bool,
     id: Option<PeerId>,
 }
@@ -55,7 +54,6 @@ impl DiscoveryConfig {
 
             allow_ipv4_private: false,
             allow_ipv4_shared: false,
-            allow_ipv6_link_local: false,
             allow_ipv6_ula: false,
             id: None,
         }
@@ -86,12 +84,6 @@ impl DiscoveryConfig {
     /// - 100.64.0.0/10
     pub fn allow_ipv4_shared(&mut self, v: bool) -> &mut Self {
         self.allow_ipv4_shared = v;
-        self
-    }
-
-    /// Allow IPv6 link local addresses (fe00::/7)?
-    pub fn allow_ipv6_link_local(&mut self, v: bool) -> &mut Self {
-        self.allow_ipv6_link_local = v;
         self
     }
 
@@ -165,7 +157,6 @@ impl DiscoveryBehaviour {
     fn is_address_allowed(&self, addr: &Multiaddr) -> bool {
         (self.config.allow_ipv4_private && is_ipv4_private(&addr))
             || (self.config.allow_ipv4_shared && is_ipv4_shared(&addr))
-            || (self.config.allow_ipv6_link_local && is_ipv6_link_local(&addr))
             || (self.config.allow_ipv6_ula && is_ipv6_ula(addr))
     }
 }
@@ -389,22 +380,6 @@ fn is_ipv4_shared(addr: &Multiaddr) -> bool {
         if let Protocol::Ip4(ipv4) = p {
             ipv4.octets()[0] == 100
                 && (ipv4.octets()[1] & 0b1100_0000 == 0b0100_0000)
-        } else {
-            false
-        }
-    });
-
-    match res {
-        Some(v) => v,
-        None => false,
-    }
-}
-
-/// Is the multiaddress a link local IPv6?
-fn is_ipv6_link_local(addr: &Multiaddr) -> bool {
-    let res = addr.iter().next().map(|p| {
-        if let Protocol::Ip6(ipv6) = p {
-            (ipv6.segments()[0] & 0xffc0) == 0xfe80
         } else {
             false
         }
