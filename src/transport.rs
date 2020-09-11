@@ -29,6 +29,21 @@ use libp2p::identity::Keypair;
 use libp2p::PeerId;
 
 /// Builds the `Transport` used in Locha P2P
+///
+/// # Arguments
+///
+/// `- keypair`: The keypair used to make a secure channel using
+/// the Noise protocol.
+///
+/// # Example
+///
+/// ```rust
+/// use locha_p2p::identity::Identity;
+///
+/// let id = Identity::generate();
+/// let _transport = locha_p2p::build_transport(&id.keypair())
+///     .expect("Couldn't create transport");
+/// ```
 pub fn build_transport(
     keypair: &Keypair,
 ) -> io::Result<
