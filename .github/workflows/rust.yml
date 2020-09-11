@@ -41,3 +41,12 @@ jobs:
         with:
           command: clippy
           args: -- -D warnings
+
+      - name: Run cargo-tarpaulin
+        uses: actions-rs/tarpaulin@v0.1.2
+        with:
+          version: '0.14.3'
+          args: '-- --test-threads 1'
+
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v1
