@@ -149,7 +149,6 @@ async fn main() {
         .id(identity.id())
         .allow_ipv4_private(arguments.allow_ipv4_private)
         .allow_ipv4_shared(arguments.allow_ipv4_shared)
-        .allow_ipv6_link_local(arguments.allow_ipv6_link_local)
         .allow_ipv6_ula(arguments.allow_ipv6_ula);
 
     let config = RuntimeConfig {

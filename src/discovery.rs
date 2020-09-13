@@ -41,7 +41,6 @@ pub struct DiscoveryConfig {
 
     allow_ipv4_private: bool,
     allow_ipv4_shared: bool,
-    allow_ipv6_link_local: bool,
     allow_ipv6_ula: bool,
     id: Option<PeerId>,
 }
@@ -55,7 +54,6 @@ impl DiscoveryConfig {
 
             allow_ipv4_private: false,
             allow_ipv4_shared: false,
-            allow_ipv6_link_local: false,
             allow_ipv6_ula: false,
             id: None,
         }
@@ -86,12 +84,6 @@ impl DiscoveryConfig {
     /// - 100.64.0.0/10
     pub fn allow_ipv4_shared(&mut self, v: bool) -> &mut Self {
         self.allow_ipv4_shared = v;
-        self
-    }
-
-    /// Allow IPv6 link local addresses (fe00::/7)?
-    pub fn allow_ipv6_link_local(&mut self, v: bool) -> &mut Self {
-        self.allow_ipv6_link_local = v;
         self
     }
 
@@ -165,7 +157,6 @@ impl DiscoveryBehaviour {
     fn is_address_allowed(&self, addr: &Multiaddr) -> bool {
         (self.config.allow_ipv4_private && is_ipv4_private(&addr))
             || (self.config.allow_ipv4_shared && is_ipv4_shared(&addr))
-            || (self.config.allow_ipv6_link_local && is_ipv6_link_local(&addr))
             || (self.config.allow_ipv6_ula && is_ipv6_ula(addr))
     }
 }
@@ -400,22 +391,6 @@ fn is_ipv4_shared(addr: &Multiaddr) -> bool {
     }
 }
 
-/// Is the multiaddress a link local IPv6?
-fn is_ipv6_link_local(addr: &Multiaddr) -> bool {
-    let res = addr.iter().next().map(|p| {
-        if let Protocol::Ip6(ipv6) = p {
-            (ipv6.segments()[0] & 0xffc0) == 0xfe80
-        } else {
-            false
-        }
-    });
-
-    match res {
-        Some(v) => v,
-        None => false,
-    }
-}
-
 /// Is the multiaddress an IPv6 ULA?
 fn is_ipv6_ula(addr: &Multiaddr) -> bool {
     let res = addr.iter().next().map(|p| {
@@ -429,5 +404,36 @@ fn is_ipv6_ula(addr: &Multiaddr) -> bool {
     match res {
         Some(v) => v,
         None => false,
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_ipv4_prviate() {
+        assert!(is_ipv4_private(&"/ip4/192.168.0.1".parse().unwrap()));
+        assert!(is_ipv4_private(&"/ip4/172.16.0.1".parse().unwrap()));
+        assert!(is_ipv4_private(&"/ip4/10.0.0.1".parse().unwrap()));
+        assert!(!is_ipv4_private(&"/ip4/186.200.4.1".parse().unwrap()));
+        assert!(!is_ipv4_private(&"/ip4/100.62.64.1".parse().unwrap()));
+        assert!(!is_ipv4_private(&"/dns/p2p.locha.io".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_ipv4_shared() {
+        assert!(is_ipv4_shared(&"/ip4/100.80.72.1".parse().unwrap()));
+        assert!(!is_ipv4_shared(&"/ip4/186.200.4.1".parse().unwrap()));
+        assert!(!is_ipv4_shared(&"/dns/p2p.locha.io".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_ipv6_is_ula() {
+        assert!(is_ipv6_ula(&"/ip6/fc00::1".parse().unwrap()));
+        assert!(is_ipv6_ula(&"/ip6/fc20::1".parse().unwrap()));
+        assert!(is_ipv6_ula(&"/ip6/fd00::1".parse().unwrap()));
+        assert!(!is_ipv6_ula(&"/ip6/2001::1".parse().unwrap()));
+        assert!(!is_ipv6_ula(&"/dns/p2p.locha.io".parse().unwrap()));
     }
 }
