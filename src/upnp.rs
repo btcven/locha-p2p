@@ -271,11 +271,11 @@ impl NetworkBehaviour for UpnpBehaviour {
                     }
                 }
 
+                self.reset_timer();
+
                 if let Some(report) = self.last_report() {
                     return Poll::Ready(report);
                 }
-
-                self.reset_timer();
             }
             Poll::Pending => (),
         }
