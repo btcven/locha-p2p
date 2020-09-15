@@ -19,6 +19,7 @@ use std::task::{Context, Poll};
 
 use libp2p::kad::handler::{KademliaHandler, KademliaHandlerEvent};
 use libp2p::kad::record::store::MemoryStore;
+use libp2p::kad::QueryResult;
 use libp2p::kad::{Kademlia, KademliaConfig, KademliaEvent, QueryId};
 
 use libp2p::mdns::{Mdns, MdnsEvent};
@@ -33,8 +34,9 @@ use libp2p::{Multiaddr, PeerId};
 use log::{debug, error, info};
 
 pub const LOCHA_KAD_PROTOCOL_NAME: &[u8] = b"/locha/kad/1.0.0";
+pub const BOOTSTRAP_NODES: &[&str] = &["/dns/p2p.locha.io/tcp/45215/p2p/16Uiu2HAm3U4JmNLwVfCypZX3hCLmVkcsdzEh8NHfPFcKRhsaJ8rf"];
 
-/// Builder for [`DiscoveryBehaviour`](struct.DiscoveryBehaviour.html).
+/// Configuration builder for [`DiscoveryBehaviour`].
 #[derive(Debug, Clone)]
 pub struct DiscoveryConfig {
     use_mdns: bool,
@@ -43,20 +45,41 @@ pub struct DiscoveryConfig {
     allow_ipv4_shared: bool,
     allow_ipv6_ula: bool,
     id: Option<PeerId>,
+
+    bootstrap: Vec<(PeerId, Multiaddr)>,
 }
 
 impl DiscoveryConfig {
-    /// Create a new [`DiscoveryBehaviour`](struct.DiscoveryBehaviour.html)
-    /// builder.
-    pub fn new() -> DiscoveryConfig {
-        DiscoveryConfig {
+    /// Create a new [`DiscoveryConfig`]
+    pub fn new(use_default_bootstrap_nodes: bool) -> DiscoveryConfig {
+        let mut cfg = DiscoveryConfig {
             use_mdns: false,
 
             allow_ipv4_private: false,
             allow_ipv4_shared: false,
             allow_ipv6_ula: false,
             id: None,
+
+            bootstrap: Vec::new(),
+        };
+
+        if use_default_bootstrap_nodes {
+            for addr_str in BOOTSTRAP_NODES.iter() {
+                let mut addr = addr_str
+                    .parse::<Multiaddr>()
+                    .expect("Invalid bootstrap node");
+
+                match addr.pop() {
+                    Some(Protocol::P2p(hash)) => {
+                        let peer_id = PeerId::from_multihash(hash).unwrap();
+                        cfg.add_address(&peer_id, &addr);
+                    }
+                    _ => panic!("Bootstrap node doesn't have a PeerId"),
+                }
+            }
         }
+
+        cfg
     }
 
     /// Use mDNs for peer discovery?
@@ -98,11 +121,21 @@ impl DiscoveryConfig {
         self.id = Some(id);
         self
     }
+
+    /// Add a bootstrap address for Kademlia DHT
+    pub fn add_address(
+        &mut self,
+        peer_id: &PeerId,
+        addr: &Multiaddr,
+    ) -> &mut Self {
+        self.bootstrap.push((peer_id.clone(), addr.clone()));
+        self
+    }
 }
 
 impl Default for DiscoveryConfig {
     fn default() -> DiscoveryConfig {
-        DiscoveryConfig::new()
+        DiscoveryConfig::new(false)
     }
 }
 
@@ -118,7 +151,7 @@ pub struct DiscoveryBehaviour {
 }
 
 impl DiscoveryBehaviour {
-    pub fn with_config(config: DiscoveryConfig) -> DiscoveryBehaviour {
+    pub fn with_config(mut config: DiscoveryConfig) -> DiscoveryBehaviour {
         let id = config
             .id
             .clone()
@@ -126,6 +159,16 @@ impl DiscoveryBehaviour {
 
         let mut kad_config = KademliaConfig::default();
         kad_config.set_protocol_name(LOCHA_KAD_PROTOCOL_NAME);
+
+        let mut kademlia =
+            Kademlia::with_config(id.clone(), MemoryStore::new(id), kad_config);
+
+        let bootstrap_nodes =
+            std::mem::replace(&mut config.bootstrap, Vec::new());
+
+        for (peer, addr) in bootstrap_nodes {
+            kademlia.add_address(&peer, addr);
+        }
 
         DiscoveryBehaviour {
             mdns: if config.use_mdns {
@@ -142,13 +185,16 @@ impl DiscoveryBehaviour {
             } else {
                 None
             },
-            kademlia: Kademlia::with_config(
-                id.clone(),
-                MemoryStore::new(id),
-                kad_config,
-            ),
+            kademlia,
             pending_events: VecDeque::new(),
             config,
+        }
+    }
+
+    /// Start bootstrap process
+    pub fn bootstrap(&mut self) {
+        if let Err(e) = self.kademlia.bootstrap() {
+            error!(target: "locha-p2p", "Couldn't bootstrap: {}", e);
         }
     }
 }
@@ -237,8 +283,24 @@ impl NetworkBehaviour for DiscoveryBehaviour {
             match action {
                 NetworkBehaviourAction::GenerateEvent(ev) => {
                     let result = match ev {
-                        KademliaEvent::QueryResult { .. } => {
+                        KademliaEvent::QueryResult { result, .. } => {
                             debug!(target: "locha-p2p", "query result produced");
+                            match result {
+                                QueryResult::Bootstrap(Ok(info)) => info!(
+                                    target: "locha-p2p",
+                                    "Succesfully bootstrapped with {}",
+                                    info.peer
+                                ),
+                                QueryResult::Bootstrap(Err(e)) => {
+                                    error!(
+                                        target: "locha-p2p",
+                                        "Bootstrap failed: {:?}",
+                                        e
+                                    );
+                                }
+                                _ => (),
+                            };
+
                             Poll::Pending
                         }
                         KademliaEvent::RoutingUpdated { peer, .. } => {
@@ -408,8 +470,14 @@ pub mod tests {
     use crate::identity::Identity;
 
     #[test]
+    fn test_discovery_config_bootstrap_nodes() {
+        // We expect here for parsing of bootstrap nodes to go very well
+        DiscoveryConfig::new(true);
+    }
+
+    #[test]
     fn test_is_address_not_allowed() {
-        let mut config = DiscoveryConfig::new();
+        let mut config = DiscoveryConfig::new(false);
         config.id(Identity::generate().id());
         let discovery = DiscoveryBehaviour::with_config(config);
 

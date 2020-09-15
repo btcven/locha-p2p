@@ -30,6 +30,8 @@ pub struct Arguments {
     pub allow_ipv4_private: bool,
     pub allow_ipv4_shared: bool,
     pub allow_ipv6_ula: bool,
+
+    pub dont_bootstrap: bool,
 }
 
 impl Arguments {
@@ -56,6 +58,8 @@ impl Arguments {
                 || matches.is_present("allow-mdns"),
             allow_ipv4_shared: matches.is_present("allow-ipv4-shared"),
             allow_ipv6_ula: matches.is_present("allow-ipv6-ula"),
+
+            dont_bootstrap: matches.is_present("dont-bootstrap"),
         }
     }
 }
