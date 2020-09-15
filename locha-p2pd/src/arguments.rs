@@ -24,7 +24,6 @@ pub struct Arguments {
     pub listen_addr: Multiaddr,
     pub dials: Vec<Multiaddr>,
     pub identity: PathBuf,
-    pub echo: bool,
 
     pub use_mdns: bool,
     pub allow_ipv4_private: bool,
@@ -49,7 +48,6 @@ impl Arguments {
             listen_addr,
             dials,
             identity,
-            echo: matches.is_present("echo"),
 
             use_mdns: matches.is_present("use-mdns"),
             allow_ipv4_private: matches.is_present("allow-ipv4-private")
