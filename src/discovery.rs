@@ -154,13 +154,14 @@ impl DiscoveryBehaviour {
 }
 
 impl DiscoveryBehaviour {
-    fn is_address_allowed(&self, addr: &Multiaddr) -> bool {
-        (self.config.allow_ipv4_private && is_ipv4_private(&addr))
-            || (self.config.allow_ipv4_shared && is_ipv4_shared(&addr))
-            || (self.config.allow_ipv6_ula && is_ipv6_ula(addr))
+    fn is_address_not_allowed(&self, addr: &Multiaddr) -> bool {
+        (!self.config.allow_ipv4_private && is_ipv4_private(&addr))
+            || (!self.config.allow_ipv4_shared && is_ipv4_shared(&addr))
+            || (!self.config.allow_ipv6_ula && is_ipv6_ula(addr))
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum DiscoveryEvent {
     Discovered(PeerId),
     UnroutablePeer(PeerId),
@@ -177,7 +178,7 @@ impl NetworkBehaviour for DiscoveryBehaviour {
     fn addresses_of_peer(&mut self, id: &PeerId) -> Vec<Multiaddr> {
         let mut ret = Vec::new();
         for addr in self.kademlia.addresses_of_peer(id) {
-            if !self.is_address_allowed(&addr) {
+            if self.is_address_not_allowed(&addr) {
                 debug!(
                     target: "locha-p2p",
                     "Kad address {} not allowed",
@@ -360,56 +361,76 @@ impl NetworkBehaviour for DiscoveryBehaviour {
 
 /// Is the multiaddress an IPv4 private address?
 fn is_ipv4_private(addr: &Multiaddr) -> bool {
-    let res = addr.iter().next().map(|p| {
-        if let Protocol::Ip4(ipv4) = p {
-            ipv4.is_private()
-        } else {
-            false
-        }
-    });
-
-    match res {
-        Some(v) => v,
-        None => false,
-    }
+    addr.iter()
+        .next()
+        .map(|p| {
+            if let Protocol::Ip4(ipv4) = p {
+                ipv4.is_private()
+            } else {
+                false
+            }
+        })
+        .unwrap_or(false)
 }
 
 /// Is the multiaddress par of IPv4 Shared Address Space?
 fn is_ipv4_shared(addr: &Multiaddr) -> bool {
-    let res = addr.iter().next().map(|p| {
-        if let Protocol::Ip4(ipv4) = p {
-            ipv4.octets()[0] == 100
-                && (ipv4.octets()[1] & 0b1100_0000 == 0b0100_0000)
-        } else {
-            false
-        }
-    });
-
-    match res {
-        Some(v) => v,
-        None => false,
-    }
+    addr.iter()
+        .next()
+        .map(|p| {
+            if let Protocol::Ip4(ipv4) = p {
+                ipv4.octets()[0] == 100
+                    && (ipv4.octets()[1] & 0b1100_0000 == 0b0100_0000)
+            } else {
+                false
+            }
+        })
+        .unwrap_or(false)
 }
 
 /// Is the multiaddress an IPv6 ULA?
 fn is_ipv6_ula(addr: &Multiaddr) -> bool {
-    let res = addr.iter().next().map(|p| {
-        if let Protocol::Ip6(ipv6) = p {
-            (ipv6.segments()[0] & 0xfe00) == 0xfc00
-        } else {
-            false
-        }
-    });
-
-    match res {
-        Some(v) => v,
-        None => false,
-    }
+    addr.iter()
+        .next()
+        .map(|p| {
+            if let Protocol::Ip6(ipv6) = p {
+                (ipv6.segments()[0] & 0xfe00) == 0xfc00
+            } else {
+                false
+            }
+        })
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::identity::Identity;
+
+    #[test]
+    fn test_is_address_not_allowed() {
+        let mut config = DiscoveryConfig::new();
+        config.id(Identity::generate().id());
+        let discovery = DiscoveryBehaviour::with_config(config);
+
+        assert!(discovery
+            .is_address_not_allowed(&"/ip4/192.168.0.1".parse().unwrap()));
+        assert!(discovery
+            .is_address_not_allowed(&"/ip4/172.16.0.1".parse().unwrap()));
+        assert!(
+            discovery.is_address_not_allowed(&"/ip4/10.0.0.1".parse().unwrap())
+        );
+        assert!(discovery
+            .is_address_not_allowed(&"/ip4/100.80.72.1".parse().unwrap()));
+        assert!(
+            discovery.is_address_not_allowed(&"/ip6/fc00::1".parse().unwrap())
+        );
+        assert!(!discovery
+            .is_address_not_allowed(&"/ip4/186.200.4.1".parse().unwrap()));
+        assert!(
+            !discovery.is_address_not_allowed(&"/ip6/2001::2".parse().unwrap())
+        );
+    }
 
     #[test]
     fn test_is_ipv4_prviate() {
