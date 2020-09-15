@@ -70,6 +70,11 @@ impl Network {
     ) -> Result<(), PublishError> {
         self.gossip.publish(topic, data)
     }
+
+    /// Start bootstrap process
+    pub fn bootstrap(&mut self) {
+        self.discovery.bootstrap();
+    }
 }
 
 /// Network behaviour event

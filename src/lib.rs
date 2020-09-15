@@ -56,7 +56,7 @@ pub type Swarm = libp2p::Swarm<self::network::Network>;
 /// use locha_p2p::discovery::DiscoveryConfig;
 ///
 /// let id = Identity::generate();
-/// let mut discovery = DiscoveryConfig::new();
+/// let mut discovery = DiscoveryConfig::new(false);
 /// discovery.id(id.id());
 ///
 /// let _swarm = locha_p2p::build_swarm(&id, discovery, false).unwrap();

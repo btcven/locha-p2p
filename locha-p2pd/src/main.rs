@@ -48,7 +48,7 @@ async fn main() {
         .expect("couldn't load identity file");
     info!("our peer id: {}", identity.id());
 
-    let mut discovery = DiscoveryConfig::new();
+    let mut discovery = DiscoveryConfig::new(!arguments.dont_bootstrap);
 
     discovery
         .use_mdns(arguments.use_mdns)
@@ -78,6 +78,10 @@ async fn main() {
     // Reach out to another node if specified
     for to_dial in arguments.dials {
         runtime.dial(to_dial).await
+    }
+
+    if !arguments.dont_bootstrap {
+        runtime.bootstrap().await;
     }
 
     let input = io::stdin();

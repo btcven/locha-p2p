@@ -41,7 +41,7 @@
 //!
 //! let identity = Identity::generate();
 //!
-//! let mut discovery = DiscoveryConfig::new();
+//! let mut discovery = DiscoveryConfig::new(true);
 //!
 //! discovery.id(identity.id());
 //!
@@ -141,6 +141,17 @@ impl Runtime {
         Ok((Runtime { tx }, task(swarm, events_handler, topic, rx)))
     }
 
+    /// Start bootstrapping
+    pub async fn bootstrap(&self) {
+        trace!(target: "locha-p2p", "starting bootstrap");
+
+        self.tx
+            .clone()
+            .send(RuntimeAction::Bootstrap)
+            .await
+            .unwrap()
+    }
+
     /// Stop the runtime.
     pub async fn stop(&self) {
         trace!(target: "locha-p2p", "stopping runtime");
@@ -201,6 +212,7 @@ impl Runtime {
 
 /// Runtime action
 enum RuntimeAction {
+    Bootstrap,
     Stop,
     Dial(Multiaddr),
     SendMessage(String),
@@ -222,6 +234,9 @@ async fn task(
                 let action = action.unwrap_or(RuntimeAction::Stop);
 
                 match action {
+                    RuntimeAction::Bootstrap => {
+                        swarm.bootstrap();
+                    }
                     RuntimeAction::Stop => {
                         rx.close();
                         break;

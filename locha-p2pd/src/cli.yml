@@ -6,7 +6,7 @@ args:
     - listen-addr:
         short: l
         long: listen-addr
-        value_name: multiaddr 
+        value_name: multiaddr
         help: The address where the node will listen for incoming connections.
         default_value: "/ip4/0.0.0.0/tcp/0"
         takes_value: true
@@ -35,3 +35,6 @@ args:
     - use-mdns:
         long: use-mdns
         help: Enable discovery through mDNS. This also enables --allow-ipv4-private and --allow-ipv6-link-local
+    - dont-bootstrap:
+        long: dont-bootstrap
+        help: Don't do bootstrap with the default nodes.
