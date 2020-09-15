@@ -23,9 +23,6 @@ args:
         help: Identity file path
         default_value: "secret_key"
         takes_value: true
-    - echo:
-        long: echo
-        help: Enable testing by echoing messages from the Locha Mesh Chat application.
     - allow-ipv4-private:
         long: allow-ipv4-private
         help: Enable discovery of IPv4 private addresses.
