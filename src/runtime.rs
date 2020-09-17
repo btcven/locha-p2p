@@ -72,6 +72,8 @@ pub mod config;
 pub mod error;
 pub mod events;
 
+pub use libp2p::core::network::NetworkInfo;
+
 use futures::channel::mpsc::{channel, Receiver, Sender};
 use futures::channel::oneshot::{
     channel as oneshot_channel, Sender as OneshotSender,
@@ -153,6 +155,20 @@ impl Runtime {
             .unwrap()
     }
 
+    pub async fn network_info(&self) -> NetworkInfo {
+        trace!(target: "locha-p2p", "getting network information");
+
+        let (tx, rx) = oneshot_channel::<NetworkInfo>();
+
+        self.tx
+            .clone()
+            .send(RuntimeAction::NetworkInfo(tx))
+            .await
+            .unwrap();
+
+        rx.await.unwrap()
+    }
+
     /// Stop the runtime.
     pub async fn stop(&self) {
         trace!(target: "locha-p2p", "stopping runtime");
@@ -214,6 +230,7 @@ impl Runtime {
 /// Runtime action
 enum RuntimeAction {
     Bootstrap,
+    NetworkInfo(OneshotSender<NetworkInfo>),
     Stop,
     Dial(Multiaddr),
     SendMessage(String),
@@ -237,6 +254,9 @@ async fn task(
                 match action {
                     RuntimeAction::Bootstrap => {
                         swarm.bootstrap();
+                    }
+                    RuntimeAction::NetworkInfo(tx) => {
+                        tx.send(Swarm::network_info(&swarm)).ok();
                     }
                     RuntimeAction::Stop => {
                         rx.close();
