@@ -541,9 +541,24 @@ pub mod tests {
     use crate::identity::Identity;
 
     #[test]
-    fn test_discovery_config_bootstrap_nodes() {
+    fn test_discovery_config() {
         // We expect here for parsing of bootstrap nodes to go very well
-        DiscoveryConfig::new(true);
+        let mut config = DiscoveryConfig::new(true);
+
+        config
+            .max_connections(10)
+            .allow_ipv4_private(true)
+            .allow_ipv4_shared(true)
+            .allow_ipv6_ula(true);
+
+        assert_eq!(
+            config.bootstrap[0].0.to_string(),
+            "16Uiu2HAm3U4JmNLwVfCypZX3hCLmVkcsdzEh8NHfPFcKRhsaJ8rf".to_string()
+        );
+        assert_eq!(config.max_connections, 10);
+        assert!(config.allow_ipv4_private);
+        assert!(config.allow_ipv4_shared);
+        assert!(config.allow_ipv6_ula);
     }
 
     #[test]
