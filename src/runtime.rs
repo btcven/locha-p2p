@@ -96,6 +96,7 @@ use crate::PeerId;
 use crate::{build_swarm, Swarm};
 
 /// Locha P2P runtime
+#[derive(Clone)]
 pub struct Runtime {
     tx: Sender<RuntimeAction>,
 }
