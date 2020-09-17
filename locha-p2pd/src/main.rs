@@ -52,7 +52,6 @@ async fn main() {
 
     discovery
         .use_mdns(arguments.use_mdns)
-        .id(identity.id())
         .allow_ipv4_private(arguments.allow_ipv4_private)
         .allow_ipv4_shared(arguments.allow_ipv4_shared)
         .allow_ipv6_ula(arguments.allow_ipv6_ula);

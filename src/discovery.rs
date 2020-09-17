@@ -44,7 +44,6 @@ pub struct DiscoveryConfig {
     allow_ipv4_private: bool,
     allow_ipv4_shared: bool,
     allow_ipv6_ula: bool,
-    id: Option<PeerId>,
 
     bootstrap: Vec<(PeerId, Multiaddr)>,
 }
@@ -58,7 +57,6 @@ impl DiscoveryConfig {
             allow_ipv4_private: false,
             allow_ipv4_shared: false,
             allow_ipv6_ula: false,
-            id: None,
 
             bootstrap: Vec::new(),
         };
@@ -116,12 +114,6 @@ impl DiscoveryConfig {
         self
     }
 
-    /// Peer Id of the node discovering peers.
-    pub fn id(&mut self, id: PeerId) -> &mut Self {
-        self.id = Some(id);
-        self
-    }
-
     /// Add a bootstrap address for Kademlia DHT
     pub fn add_address(
         &mut self,
@@ -151,12 +143,10 @@ pub struct DiscoveryBehaviour {
 }
 
 impl DiscoveryBehaviour {
-    pub fn with_config(mut config: DiscoveryConfig) -> DiscoveryBehaviour {
-        let id = config
-            .id
-            .clone()
-            .expect("PeerId is necessary to participate in Peer Discovery");
-
+    pub fn with_config(
+        id: PeerId,
+        mut config: DiscoveryConfig,
+    ) -> DiscoveryBehaviour {
         let mut kad_config = KademliaConfig::default();
         kad_config.set_protocol_name(LOCHA_KAD_PROTOCOL_NAME);
 
@@ -477,9 +467,9 @@ pub mod tests {
 
     #[test]
     fn test_is_address_not_allowed() {
-        let mut config = DiscoveryConfig::new(false);
-        config.id(Identity::generate().id());
-        let discovery = DiscoveryBehaviour::with_config(config);
+        let config = DiscoveryConfig::new(false);
+        let discovery =
+            DiscoveryBehaviour::with_config(Identity::generate().id(), config);
 
         assert!(discovery
             .is_address_not_allowed(&"/ip4/192.168.0.1".parse().unwrap()));

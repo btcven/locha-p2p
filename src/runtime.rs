@@ -41,18 +41,13 @@
 //!
 //! let identity = Identity::generate();
 //!
-//! let mut discovery = DiscoveryConfig::new(true);
-//!
-//! discovery.id(identity.id());
-//!
 //! let config = RuntimeConfig {
 //!     identity,
 //!     listen_addr: "/ip4/0.0.0.0/tcp/0".parse().expect("invalid address"),
 //!     channel_cap: 20,
 //!     heartbeat_interval: 5,
 //!
-//!     // Yes, allow discovery of private IPv4 adddresses
-//!     discovery,
+//!     discovery: DiscoveryConfig::new(true),
 //! };
 //!
 //! let (runtime, runtime_task) = Runtime::new(config, Box::new(EventsHandler), false).unwrap();
