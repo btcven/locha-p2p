@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[cfg(feature = "terminal-ui")]
+mod terminal_ui;
+
 use std::path::Path;
 
 use clap::{load_yaml, App};
 
-use async_std::io;
 use async_std::task;
 
 use locha_p2p::discovery::DiscoveryConfig;
@@ -36,6 +38,7 @@ impl RuntimeEvents for EventsHandler {}
 
 #[async_std::main]
 async fn main() {
+    #[cfg(not(feature = "terminal-ui"))]
     env_logger::Builder::new()
         .filter_level(log::LevelFilter::Trace)
         .init();
@@ -83,16 +86,15 @@ async fn main() {
         runtime.bootstrap().await;
     }
 
-    let input = io::stdin();
-    loop {
-        let mut line = String::new();
-        input.read_line(&mut line).await.unwrap();
-        if line == "exit\n" || line == "exit\r\n" || line == "exit\r" {
-            break;
-        }
-
-        runtime.send_message(line).await;
-    }
+    // Run either the raw terminal (only logging with env_logger) or
+    // the terminal UI depending on the compile-time configuration.
+    //
+    // XXX: make raw mode available too when terminal-ui feature
+    // is enabled through a CLI parameter.
+    #[cfg(not(feature = "terminal-ui"))]
+    run_raw_terminal(runtime.clone()).await;
+    #[cfg(feature = "terminal-ui")]
+    run_terminal_ui(runtime.clone()).await;
 
     runtime.stop().await
 }
@@ -103,4 +105,43 @@ fn load_identity(file: &Path) -> std::io::Result<Identity> {
         id.to_file(file)?;
         Ok(id)
     })
+}
+
+#[cfg(not(feature = "terminal-ui"))]
+async fn run_raw_terminal(runtime: Runtime) {
+    let input = async_std::io::stdin();
+    loop {
+        let mut line = String::new();
+        input.read_line(&mut line).await.unwrap();
+        if line == "exit\n" || line == "exit\r\n" || line == "exit\r" {
+            break;
+        }
+
+        runtime.send_message(line).await;
+    }
+}
+
+#[cfg(feature = "terminal-ui")]
+async fn run_terminal_ui(runtime: Runtime) {
+    use std::time::Duration;
+    use terminal_ui::{Event, Events};
+    use termion::event::Key;
+
+    let mut terminal = terminal_ui::build_terminal()
+        .expect("Couldn't create application terminal");
+    let mut app = terminal_ui::App::new(runtime.network_info().await);
+    let mut events = Events::new(Duration::from_millis(50));
+
+    loop {
+        match events.next().await {
+            Event::Key(Key::Char('q')) => {
+                break;
+            }
+            Event::Key(_) => {}
+            Event::Tick => {
+                app.update_network_info(runtime.network_info().await);
+                app.draw(&mut terminal).unwrap();
+            }
+        }
+    }
 }
