@@ -13,9 +13,27 @@
 // limitations under the License.
 
 //! # Discovery behaviour
+//!
+//! This behaviour discovers nodes through Kademlia DHT and mDNS,
+//! althought other methods are to be added in the future, for
+//! example, searching in between the mesh of nodes when using
+//! Locha Mesh in contrary to Internet.
+//!
+//! Nodes are discovered through DHT by doing random requests
+//! at intervals, this way we can see what other peers the others
+//! nodes see. This process will stop when the maximum number of
+//! connections [`DiscoveryConfig::max_connections`] is reached,
+//! however if it's below it the process will continue/restart.
+//!
+//! To be noted, this behaviour doesn't make any new connections,
+//! instead generates [`DiscoveryEvent`]s with the found peers. So
+//! it's up to the swarm or another behaviour to connect to other
+//! peers.
 
 use std::collections::VecDeque;
+use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 use libp2p::kad::handler::{KademliaHandler, KademliaHandlerEvent};
 use libp2p::kad::record::store::MemoryStore;
@@ -31,6 +49,10 @@ use libp2p::swarm::{PollParameters, ProtocolsHandler};
 use libp2p::core::multiaddr::Protocol;
 use libp2p::{Multiaddr, PeerId};
 
+use futures::Future;
+
+use wasm_timer::Delay;
+
 use log::{debug, error, info};
 
 pub const LOCHA_KAD_PROTOCOL_NAME: &[u8] = b"/locha/kad/1.0.0";
@@ -45,6 +67,8 @@ pub struct DiscoveryConfig {
     allow_ipv4_shared: bool,
     allow_ipv6_ula: bool,
 
+    max_connections: u64,
+
     bootstrap: Vec<(PeerId, Multiaddr)>,
 }
 
@@ -57,6 +81,8 @@ impl DiscoveryConfig {
             allow_ipv4_private: false,
             allow_ipv4_shared: false,
             allow_ipv6_ula: false,
+
+            max_connections: 8,
 
             bootstrap: Vec::new(),
         };
@@ -114,6 +140,12 @@ impl DiscoveryConfig {
         self
     }
 
+    /// Maximum number of connections before stopping discovery process.
+    pub fn max_connections(&mut self, v: u64) -> &mut Self {
+        self.max_connections = v;
+        self
+    }
+
     /// Add a bootstrap address for Kademlia DHT
     pub fn add_address(
         &mut self,
@@ -138,6 +170,10 @@ pub struct DiscoveryBehaviour {
     /// Kademlia network behaviour
     kademlia: Kademlia<MemoryStore>,
     pending_events: VecDeque<DiscoveryEvent>,
+
+    connections: u64,
+    next_query: Delay,
+    next_query_time: Duration,
 
     config: DiscoveryConfig,
 }
@@ -177,6 +213,9 @@ impl DiscoveryBehaviour {
             },
             kademlia,
             pending_events: VecDeque::new(),
+            connections: 0,
+            next_query: Delay::new(Duration::new(0, 0)),
+            next_query_time: Duration::from_secs(1),
             config,
         }
     }
@@ -236,10 +275,15 @@ impl NetworkBehaviour for DiscoveryBehaviour {
     }
 
     fn inject_disconnected(&mut self, id: &PeerId) {
+        if self.connections > 0 {
+            self.connections -= 1;
+        }
+
         self.kademlia.inject_disconnected(id)
     }
 
     fn inject_connected(&mut self, id: &PeerId) {
+        self.connections += 1;
         self.kademlia.inject_connected(id)
     }
 
@@ -267,6 +311,30 @@ impl NetworkBehaviour for DiscoveryBehaviour {
             return Poll::Ready(NetworkBehaviourAction::GenerateEvent(ev));
         }
 
+        if let Poll::Ready(Ok(_)) = Pin::new(&mut self.next_query).poll(cx) {
+            let random = PeerId::random();
+            if self.connections < self.config.max_connections {
+                debug!(
+                    target: "locha-p2p",
+                    "Starting random Kademlia request with {}",
+                    random
+                );
+
+                self.kademlia.get_closest_peers(random);
+
+                self.next_query = Delay::new(self.next_query_time);
+                self.next_query_time = std::cmp::min(
+                    self.next_query_time * 2,
+                    Duration::from_secs(60),
+                );
+            } else {
+                debug!(
+                    target: "locha-p2p",
+                    "Pausing Kademlia, maximum connections reached"
+                );
+            }
+        }
+
         // Process Kademlia, they might get us some good data than other methods
         // as it's the state of the network.
         while let Poll::Ready(action) = self.kademlia.poll(cx, parameters) {
@@ -286,6 +354,19 @@ impl NetworkBehaviour for DiscoveryBehaviour {
                                         target: "locha-p2p",
                                         "Bootstrap failed: {:?}",
                                         e
+                                    );
+                                }
+                                QueryResult::GetClosestPeers(Ok(ok)) => {
+                                    info!(
+                                        target: "locha-p2p",
+                                        "Query yielded {} results",
+                                        ok.peers.len()
+                                    );
+                                }
+                                QueryResult::GetClosestPeers(Err(_)) => {
+                                    info!(
+                                        target: "locha-p2p",
+                                        "Query timed out"
                                     );
                                 }
                                 _ => (),
