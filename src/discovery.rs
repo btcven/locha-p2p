@@ -13,9 +13,27 @@
 // limitations under the License.
 
 //! # Discovery behaviour
+//!
+//! This behaviour discovers nodes through Kademlia DHT and mDNS,
+//! althought other methods are to be added in the future, for
+//! example, searching in between the mesh of nodes when using
+//! Locha Mesh in contrary to Internet.
+//!
+//! Nodes are discovered through DHT by doing random requests
+//! at intervals, this way we can see what other peers the others
+//! nodes see. This process will stop when the maximum number of
+//! connections [`DiscoveryConfig::max_connections`] is reached,
+//! however if it's below it the process will continue/restart.
+//!
+//! To be noted, this behaviour doesn't make any new connections,
+//! instead generates [`DiscoveryEvent`]s with the found peers. So
+//! it's up to the swarm or another behaviour to connect to other
+//! peers.
 
 use std::collections::VecDeque;
+use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 use libp2p::kad::handler::{KademliaHandler, KademliaHandlerEvent};
 use libp2p::kad::record::store::MemoryStore;
@@ -31,6 +49,10 @@ use libp2p::swarm::{PollParameters, ProtocolsHandler};
 use libp2p::core::multiaddr::Protocol;
 use libp2p::{Multiaddr, PeerId};
 
+use futures::Future;
+
+use wasm_timer::Delay;
+
 use log::{debug, error, info};
 
 pub const LOCHA_KAD_PROTOCOL_NAME: &[u8] = b"/locha/kad/1.0.0";
@@ -44,7 +66,8 @@ pub struct DiscoveryConfig {
     allow_ipv4_private: bool,
     allow_ipv4_shared: bool,
     allow_ipv6_ula: bool,
-    id: Option<PeerId>,
+
+    max_connections: u64,
 
     bootstrap: Vec<(PeerId, Multiaddr)>,
 }
@@ -58,7 +81,8 @@ impl DiscoveryConfig {
             allow_ipv4_private: false,
             allow_ipv4_shared: false,
             allow_ipv6_ula: false,
-            id: None,
+
+            max_connections: 8,
 
             bootstrap: Vec::new(),
         };
@@ -116,9 +140,9 @@ impl DiscoveryConfig {
         self
     }
 
-    /// Peer Id of the node discovering peers.
-    pub fn id(&mut self, id: PeerId) -> &mut Self {
-        self.id = Some(id);
+    /// Maximum number of connections before stopping discovery process.
+    pub fn max_connections(&mut self, v: u64) -> &mut Self {
+        self.max_connections = v;
         self
     }
 
@@ -147,16 +171,18 @@ pub struct DiscoveryBehaviour {
     kademlia: Kademlia<MemoryStore>,
     pending_events: VecDeque<DiscoveryEvent>,
 
+    connections: u64,
+    next_query: Delay,
+    next_query_time: Duration,
+
     config: DiscoveryConfig,
 }
 
 impl DiscoveryBehaviour {
-    pub fn with_config(mut config: DiscoveryConfig) -> DiscoveryBehaviour {
-        let id = config
-            .id
-            .clone()
-            .expect("PeerId is necessary to participate in Peer Discovery");
-
+    pub fn with_config(
+        id: PeerId,
+        mut config: DiscoveryConfig,
+    ) -> DiscoveryBehaviour {
         let mut kad_config = KademliaConfig::default();
         kad_config.set_protocol_name(LOCHA_KAD_PROTOCOL_NAME);
 
@@ -187,6 +213,9 @@ impl DiscoveryBehaviour {
             },
             kademlia,
             pending_events: VecDeque::new(),
+            connections: 0,
+            next_query: Delay::new(Duration::new(0, 0)),
+            next_query_time: Duration::from_secs(1),
             config,
         }
     }
@@ -246,10 +275,15 @@ impl NetworkBehaviour for DiscoveryBehaviour {
     }
 
     fn inject_disconnected(&mut self, id: &PeerId) {
+        if self.connections > 0 {
+            self.connections -= 1;
+        }
+
         self.kademlia.inject_disconnected(id)
     }
 
     fn inject_connected(&mut self, id: &PeerId) {
+        self.connections += 1;
         self.kademlia.inject_connected(id)
     }
 
@@ -277,6 +311,30 @@ impl NetworkBehaviour for DiscoveryBehaviour {
             return Poll::Ready(NetworkBehaviourAction::GenerateEvent(ev));
         }
 
+        if let Poll::Ready(Ok(_)) = Pin::new(&mut self.next_query).poll(cx) {
+            let random = PeerId::random();
+            if self.connections < self.config.max_connections {
+                debug!(
+                    target: "locha-p2p",
+                    "Starting random Kademlia request with {}",
+                    random
+                );
+
+                self.kademlia.get_closest_peers(random);
+
+                self.next_query = Delay::new(self.next_query_time);
+                self.next_query_time = std::cmp::min(
+                    self.next_query_time * 2,
+                    Duration::from_secs(60),
+                );
+            } else {
+                debug!(
+                    target: "locha-p2p",
+                    "Pausing Kademlia, maximum connections reached"
+                );
+            }
+        }
+
         // Process Kademlia, they might get us some good data than other methods
         // as it's the state of the network.
         while let Poll::Ready(action) = self.kademlia.poll(cx, parameters) {
@@ -296,6 +354,19 @@ impl NetworkBehaviour for DiscoveryBehaviour {
                                         target: "locha-p2p",
                                         "Bootstrap failed: {:?}",
                                         e
+                                    );
+                                }
+                                QueryResult::GetClosestPeers(Ok(ok)) => {
+                                    info!(
+                                        target: "locha-p2p",
+                                        "Query yielded {} results",
+                                        ok.peers.len()
+                                    );
+                                }
+                                QueryResult::GetClosestPeers(Err(_)) => {
+                                    info!(
+                                        target: "locha-p2p",
+                                        "Query timed out"
                                     );
                                 }
                                 _ => (),
@@ -470,16 +541,31 @@ pub mod tests {
     use crate::identity::Identity;
 
     #[test]
-    fn test_discovery_config_bootstrap_nodes() {
+    fn test_discovery_config() {
         // We expect here for parsing of bootstrap nodes to go very well
-        DiscoveryConfig::new(true);
+        let mut config = DiscoveryConfig::new(true);
+
+        config
+            .max_connections(10)
+            .allow_ipv4_private(true)
+            .allow_ipv4_shared(true)
+            .allow_ipv6_ula(true);
+
+        assert_eq!(
+            config.bootstrap[0].0.to_string(),
+            "16Uiu2HAm3U4JmNLwVfCypZX3hCLmVkcsdzEh8NHfPFcKRhsaJ8rf".to_string()
+        );
+        assert_eq!(config.max_connections, 10);
+        assert!(config.allow_ipv4_private);
+        assert!(config.allow_ipv4_shared);
+        assert!(config.allow_ipv6_ula);
     }
 
     #[test]
     fn test_is_address_not_allowed() {
-        let mut config = DiscoveryConfig::new(false);
-        config.id(Identity::generate().id());
-        let discovery = DiscoveryBehaviour::with_config(config);
+        let config = DiscoveryConfig::new(false);
+        let discovery =
+            DiscoveryBehaviour::with_config(Identity::generate().id(), config);
 
         assert!(discovery
             .is_address_not_allowed(&"/ip4/192.168.0.1".parse().unwrap()));

@@ -56,8 +56,7 @@ pub type Swarm = libp2p::Swarm<self::network::Network>;
 /// use locha_p2p::discovery::DiscoveryConfig;
 ///
 /// let id = Identity::generate();
-/// let mut discovery = DiscoveryConfig::new(false);
-/// discovery.id(id.id());
+/// let discovery = DiscoveryConfig::new(false);
 ///
 /// let _swarm = locha_p2p::build_swarm(&id, discovery, false).unwrap();
 /// ```
@@ -67,8 +66,10 @@ pub fn build_swarm(
     upnp: bool,
 ) -> Result<Swarm, std::io::Error> {
     let transport = build_transport(&identity.keypair())?;
-    let discovery =
-        self::discovery::DiscoveryBehaviour::with_config(discovery_config);
+    let discovery = self::discovery::DiscoveryBehaviour::with_config(
+        identity.id(),
+        discovery_config,
+    );
     let behaviour =
         self::network::Network::with_discovery(identity, discovery, upnp);
 

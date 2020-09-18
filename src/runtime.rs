@@ -41,18 +41,13 @@
 //!
 //! let identity = Identity::generate();
 //!
-//! let mut discovery = DiscoveryConfig::new(true);
-//!
-//! discovery.id(identity.id());
-//!
 //! let config = RuntimeConfig {
 //!     identity,
 //!     listen_addr: "/ip4/0.0.0.0/tcp/0".parse().expect("invalid address"),
 //!     channel_cap: 20,
 //!     heartbeat_interval: 5,
 //!
-//!     // Yes, allow discovery of private IPv4 adddresses
-//!     discovery,
+//!     discovery: DiscoveryConfig::new(true),
 //! };
 //!
 //! let (runtime, runtime_task) = Runtime::new(config, Box::new(EventsHandler), false).unwrap();
@@ -71,6 +66,8 @@
 pub mod config;
 pub mod error;
 pub mod events;
+
+pub use libp2p::core::network::NetworkInfo;
 
 use futures::channel::mpsc::{channel, Receiver, Sender};
 use futures::channel::oneshot::{
@@ -96,6 +93,7 @@ use crate::PeerId;
 use crate::{build_swarm, Swarm};
 
 /// Locha P2P runtime
+#[derive(Clone)]
 pub struct Runtime {
     tx: Sender<RuntimeAction>,
 }
@@ -150,6 +148,20 @@ impl Runtime {
             .send(RuntimeAction::Bootstrap)
             .await
             .unwrap()
+    }
+
+    pub async fn network_info(&self) -> NetworkInfo {
+        trace!(target: "locha-p2p", "getting network information");
+
+        let (tx, rx) = oneshot_channel::<NetworkInfo>();
+
+        self.tx
+            .clone()
+            .send(RuntimeAction::NetworkInfo(tx))
+            .await
+            .unwrap();
+
+        rx.await.unwrap()
     }
 
     /// Stop the runtime.
@@ -213,6 +225,7 @@ impl Runtime {
 /// Runtime action
 enum RuntimeAction {
     Bootstrap,
+    NetworkInfo(OneshotSender<NetworkInfo>),
     Stop,
     Dial(Multiaddr),
     SendMessage(String),
@@ -236,6 +249,9 @@ async fn task(
                 match action {
                     RuntimeAction::Bootstrap => {
                         swarm.bootstrap();
+                    }
+                    RuntimeAction::NetworkInfo(tx) => {
+                        tx.send(Swarm::network_info(&swarm)).ok();
                     }
                     RuntimeAction::Stop => {
                         rx.close();
