@@ -185,6 +185,8 @@ impl DiscoveryBehaviour {
     ) -> DiscoveryBehaviour {
         let mut kad_config = KademliaConfig::default();
         kad_config.set_protocol_name(LOCHA_KAD_PROTOCOL_NAME);
+        kad_config.set_query_timeout(Duration::from_secs(300));
+        kad_config.disjoint_query_paths(true);
 
         let mut kademlia =
             Kademlia::with_config(id.clone(), MemoryStore::new(id), kad_config);
