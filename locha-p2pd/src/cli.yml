@@ -10,11 +10,11 @@ args:
         help: The address where the node will listen for incoming connections.
         default_value: "/ip4/0.0.0.0/tcp/0"
         takes_value: true
-    - dial:
-        short: d
-        long: dial
+    - add-peer:
+        short: a
+        long: add-peer
         value_name: multiaddr
-        help: Dial a peer using it's multiaddress.
+        help: Add a peer using it's multiaddress.
         multiple: true
     - identity:
         short: id

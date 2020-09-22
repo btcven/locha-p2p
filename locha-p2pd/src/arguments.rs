@@ -22,7 +22,7 @@ use libp2p::Multiaddr;
 #[derive(Debug)]
 pub struct Arguments {
     pub listen_addr: Multiaddr,
-    pub dials: Vec<Multiaddr>,
+    pub peers: Vec<Multiaddr>,
     pub identity: PathBuf,
 
     pub use_mdns: bool,
@@ -38,7 +38,7 @@ impl Arguments {
     pub fn from_matches(matches: &ArgMatches) -> Arguments {
         let listen_addr = value_t!(matches.value_of("listen-addr"), Multiaddr)
             .unwrap_or_else(|e| e.exit());
-        let dials = match values_t!(matches.values_of("dial"), Multiaddr) {
+        let peers = match values_t!(matches.values_of("add-peer"), Multiaddr) {
             Ok(d) => d,
             Err(e) if e.kind == clap::ErrorKind::ArgumentNotFound => vec![],
             Err(e) => e.exit(),
@@ -48,7 +48,7 @@ impl Arguments {
 
         Arguments {
             listen_addr,
-            dials,
+            peers,
             identity,
 
             use_mdns: matches.is_present("use-mdns"),
