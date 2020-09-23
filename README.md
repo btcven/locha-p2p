@@ -5,8 +5,8 @@
     <img height="200px" src="./logo.png">
   </a>
   <br>
-  <a href="https://travis-ci.com/btcven/locha-mesh-chat">
-    <img src="https://travis-ci.com/btcven/locha-mesh-chat.svg?branch=master" title="Build Status">
+  <a href="https://github.com/btcven/locha-p2p/actions">
+    <img src="https://github.com/btcven/locha-p2p/workflows/Continuous%20integration/badge.svg" title="Build Status">
   </a>
 </p>
 <p align="center">
