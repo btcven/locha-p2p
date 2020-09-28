@@ -25,7 +25,7 @@ pub struct Arguments {
     pub peers: Vec<Multiaddr>,
     pub identity: PathBuf,
 
-    pub use_mdns: bool,
+    pub disable_mdns: bool,
     pub allow_ipv4_private: bool,
     pub allow_ipv4_shared: bool,
     pub allow_ipv6_ula: bool,
@@ -51,7 +51,7 @@ impl Arguments {
             peers,
             identity,
 
-            use_mdns: matches.is_present("use-mdns"),
+            disable_mdns: matches.is_present("disable-mdns"),
             allow_ipv4_private: matches.is_present("allow-ipv4-private")
                 || matches.is_present("allow-mdns"),
             allow_ipv4_shared: matches.is_present("allow-ipv4-shared"),

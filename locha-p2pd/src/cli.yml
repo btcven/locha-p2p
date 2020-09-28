@@ -32,9 +32,9 @@ args:
     - allow-ipv6-ula:
         long: allow-ipv6-ula
         help: Enable discovery of IPv6 Unique Local Addresses (fc00::/7)
-    - use-mdns:
-        long: use-mdns
-        help: Enable discovery through mDNS. This also enables --allow-ipv4-private and --allow-ipv6-link-local
+    - disable-mdns:
+        long: disable-mdns
+        help: Disable discovery through mDNS.
     - dont-bootstrap:
         long: dont-bootstrap
         help: Don't do bootstrap with the default nodes.
