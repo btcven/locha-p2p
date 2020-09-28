@@ -26,10 +26,6 @@ pub struct Arguments {
     pub identity: PathBuf,
 
     pub disable_mdns: bool,
-    pub allow_ipv4_private: bool,
-    pub allow_ipv4_shared: bool,
-    pub allow_ipv6_ula: bool,
-
     pub dont_bootstrap: bool,
 }
 
@@ -52,11 +48,6 @@ impl Arguments {
             identity,
 
             disable_mdns: matches.is_present("disable-mdns"),
-            allow_ipv4_private: matches.is_present("allow-ipv4-private")
-                || matches.is_present("allow-mdns"),
-            allow_ipv4_shared: matches.is_present("allow-ipv4-shared"),
-            allow_ipv6_ula: matches.is_present("allow-ipv6-ula"),
-
             dont_bootstrap: matches.is_present("dont-bootstrap"),
         }
     }

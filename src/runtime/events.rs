@@ -286,7 +286,7 @@ where
             "Address {} for peer {} is unreachable. \
             Attempt failed with error {}. \
             Attempts remaining: {}",
-            peer, address, error, attempts_remaining
+            address, peer, error, attempts_remaining
         );
 
         self.0

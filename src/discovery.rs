@@ -62,13 +62,7 @@ pub const BOOTSTRAP_NODES: &[&str] = &["/dns/p2p.locha.io/tcp/45215/p2p/16Uiu2HA
 #[derive(Debug, Clone)]
 pub struct DiscoveryConfig {
     use_mdns: bool,
-
-    allow_ipv4_private: bool,
-    allow_ipv4_shared: bool,
-    allow_ipv6_ula: bool,
-
     max_connections: u64,
-
     bootstrap: Vec<(PeerId, Multiaddr)>,
 }
 
@@ -77,13 +71,7 @@ impl DiscoveryConfig {
     pub fn new(use_default_bootstrap_nodes: bool) -> DiscoveryConfig {
         let mut cfg = DiscoveryConfig {
             use_mdns: false,
-
-            allow_ipv4_private: false,
-            allow_ipv4_shared: false,
-            allow_ipv6_ula: false,
-
             max_connections: 8,
-
             bootstrap: Vec::new(),
         };
 
@@ -109,34 +97,6 @@ impl DiscoveryConfig {
     /// Use mDNs for peer discovery?
     pub fn use_mdns(&mut self, v: bool) -> &mut Self {
         self.use_mdns = v;
-        self
-    }
-
-    /// Allow IPv4 private addresses?
-    ///
-    /// Address ranges considered private:
-    ///
-    /// - 10.0.0.0/8
-    /// - 172.16.0.0/12
-    /// - 192.168.0.0/16
-    pub fn allow_ipv4_private(&mut self, v: bool) -> &mut Self {
-        self.allow_ipv4_private = v;
-        self
-    }
-
-    /// Allow IPv4 shared addresses?
-    ///
-    /// Addresses considered part of Shared Address Space:
-    ///
-    /// - 100.64.0.0/10
-    pub fn allow_ipv4_shared(&mut self, v: bool) -> &mut Self {
-        self.allow_ipv4_shared = v;
-        self
-    }
-
-    /// Allow unique local addresses (fc00::/7)?
-    pub fn allow_ipv6_ula(&mut self, v: bool) -> &mut Self {
-        self.allow_ipv6_ula = v;
         self
     }
 
@@ -234,14 +194,6 @@ impl DiscoveryBehaviour {
     }
 }
 
-impl DiscoveryBehaviour {
-    fn is_address_not_allowed(&self, addr: &Multiaddr) -> bool {
-        (!self.config.allow_ipv4_private && is_ipv4_private(&addr))
-            || (!self.config.allow_ipv4_shared && is_ipv4_shared(&addr))
-            || (!self.config.allow_ipv6_ula && is_ipv6_ula(addr))
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum DiscoveryEvent {
     Discovered(PeerId),
@@ -258,23 +210,10 @@ impl NetworkBehaviour for DiscoveryBehaviour {
 
     fn addresses_of_peer(&mut self, id: &PeerId) -> Vec<Multiaddr> {
         let mut ret = Vec::new();
-        for addr in self.kademlia.addresses_of_peer(id) {
-            if self.is_address_not_allowed(&addr) {
-                debug!(
-                    target: "locha-p2p",
-                    "Kad address {} not allowed",
-                    addr
-                );
-                continue;
-            }
-
-            ret.push(addr);
-        }
+        ret.extend_from_slice(self.kademlia.addresses_of_peer(id).as_slice());
 
         if let Some(ref mut mdns) = self.mdns {
-            for addr in mdns.addresses_of_peer(id) {
-                ret.push(addr);
-            }
+            ret.extend_from_slice(mdns.addresses_of_peer(id).as_slice());
         }
 
         ret
@@ -498,126 +437,21 @@ impl NetworkBehaviour for DiscoveryBehaviour {
     }
 }
 
-/// Is the multiaddress an IPv4 private address?
-fn is_ipv4_private(addr: &Multiaddr) -> bool {
-    addr.iter()
-        .next()
-        .map(|p| {
-            if let Protocol::Ip4(ipv4) = p {
-                ipv4.is_private()
-            } else {
-                false
-            }
-        })
-        .unwrap_or(false)
-}
-
-/// Is the multiaddress par of IPv4 Shared Address Space?
-fn is_ipv4_shared(addr: &Multiaddr) -> bool {
-    addr.iter()
-        .next()
-        .map(|p| {
-            if let Protocol::Ip4(ipv4) = p {
-                ipv4.octets()[0] == 100
-                    && (ipv4.octets()[1] & 0b1100_0000 == 0b0100_0000)
-            } else {
-                false
-            }
-        })
-        .unwrap_or(false)
-}
-
-/// Is the multiaddress an IPv6 ULA?
-fn is_ipv6_ula(addr: &Multiaddr) -> bool {
-    addr.iter()
-        .next()
-        .map(|p| {
-            if let Protocol::Ip6(ipv6) = p {
-                (ipv6.segments()[0] & 0xfe00) == 0xfc00
-            } else {
-                false
-            }
-        })
-        .unwrap_or(false)
-}
-
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::identity::Identity;
 
     #[test]
     fn test_discovery_config() {
         // We expect here for parsing of bootstrap nodes to go very well
         let mut config = DiscoveryConfig::new(true);
 
-        config
-            .max_connections(10)
-            .allow_ipv4_private(true)
-            .allow_ipv4_shared(true)
-            .allow_ipv6_ula(true);
+        config.max_connections(10);
 
         assert_eq!(
             config.bootstrap[0].0.to_string(),
             "16Uiu2HAm3U4JmNLwVfCypZX3hCLmVkcsdzEh8NHfPFcKRhsaJ8rf".to_string()
         );
         assert_eq!(config.max_connections, 10);
-        assert!(config.allow_ipv4_private);
-        assert!(config.allow_ipv4_shared);
-        assert!(config.allow_ipv6_ula);
-    }
-
-    #[test]
-    fn test_is_address_not_allowed() {
-        let config = DiscoveryConfig::new(false);
-        let discovery =
-            DiscoveryBehaviour::with_config(Identity::generate().id(), config);
-
-        assert!(discovery
-            .is_address_not_allowed(&"/ip4/192.168.0.1".parse().unwrap()));
-        assert!(discovery
-            .is_address_not_allowed(&"/ip4/172.16.0.1".parse().unwrap()));
-        assert!(
-            discovery.is_address_not_allowed(&"/ip4/10.0.0.1".parse().unwrap())
-        );
-        assert!(discovery
-            .is_address_not_allowed(&"/ip4/100.80.72.1".parse().unwrap()));
-        assert!(
-            discovery.is_address_not_allowed(&"/ip6/fc00::1".parse().unwrap())
-        );
-        assert!(!discovery
-            .is_address_not_allowed(&"/ip4/186.200.4.1".parse().unwrap()));
-        assert!(!discovery.is_address_not_allowed(
-            &"/ip4/85.53.137.144/tcp/50130".parse().unwrap()
-        ));
-        assert!(
-            !discovery.is_address_not_allowed(&"/ip6/2001::2".parse().unwrap())
-        );
-    }
-
-    #[test]
-    fn test_is_ipv4_prviate() {
-        assert!(is_ipv4_private(&"/ip4/192.168.0.1".parse().unwrap()));
-        assert!(is_ipv4_private(&"/ip4/172.16.0.1".parse().unwrap()));
-        assert!(is_ipv4_private(&"/ip4/10.0.0.1".parse().unwrap()));
-        assert!(!is_ipv4_private(&"/ip4/186.200.4.1".parse().unwrap()));
-        assert!(!is_ipv4_private(&"/ip4/100.62.64.1".parse().unwrap()));
-        assert!(!is_ipv4_private(&"/dns/p2p.locha.io".parse().unwrap()));
-    }
-
-    #[test]
-    fn test_is_ipv4_shared() {
-        assert!(is_ipv4_shared(&"/ip4/100.80.72.1".parse().unwrap()));
-        assert!(!is_ipv4_shared(&"/ip4/186.200.4.1".parse().unwrap()));
-        assert!(!is_ipv4_shared(&"/dns/p2p.locha.io".parse().unwrap()));
-    }
-
-    #[test]
-    fn test_ipv6_is_ula() {
-        assert!(is_ipv6_ula(&"/ip6/fc00::1".parse().unwrap()));
-        assert!(is_ipv6_ula(&"/ip6/fc20::1".parse().unwrap()));
-        assert!(is_ipv6_ula(&"/ip6/fd00::1".parse().unwrap()));
-        assert!(!is_ipv6_ula(&"/ip6/2001::1".parse().unwrap()));
-        assert!(!is_ipv6_ula(&"/dns/p2p.locha.io".parse().unwrap()));
     }
 }

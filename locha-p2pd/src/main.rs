@@ -51,11 +51,7 @@ async fn main() {
 
     let mut discovery = DiscoveryConfig::new(!arguments.dont_bootstrap);
 
-    discovery
-        .use_mdns(!arguments.disable_mdns)
-        .allow_ipv4_private(arguments.allow_ipv4_private)
-        .allow_ipv4_shared(arguments.allow_ipv4_shared)
-        .allow_ipv6_ula(arguments.allow_ipv6_ula);
+    discovery.use_mdns(!arguments.disable_mdns);
 
     // Reach out to another node if specified
     for mut addr in arguments.peers {
