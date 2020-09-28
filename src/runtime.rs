@@ -75,12 +75,12 @@ use futures::channel::oneshot::{
 };
 use futures::{Future, FutureExt, SinkExt, StreamExt};
 
-use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
+use libp2p::swarm::SwarmEvent;
 
 use libp2p::identify::IdentifyEvent;
 use libp2p::Multiaddr;
 
-use log::{error, trace};
+use log::{error, info, trace, warn};
 
 use self::config::RuntimeConfig;
 use self::error::Error;
@@ -407,12 +407,24 @@ fn handle_behaviour_event(
         }
         NetworkEvent::Discovery(ref disc_ev) => match *disc_ev {
             DiscoveryEvent::Discovered(ref peer) => {
-                let addrs = swarm.addresses_of_peer(peer);
-                events_handler.on_peer_discovered(peer, addrs);
+                info!(
+                    target: "locha-p2p",
+                    "found peer {}",
+                    peer,
+                );
+
+                match Swarm::dial(swarm, peer) {
+                    Ok(()) => (),
+                    Err(e) => {
+                        warn!(
+                            target: "locha-p2p",
+                            "couldn't dial peer {}: {}",
+                            peer, e,
+                        );
+                    }
+                }
             }
-            DiscoveryEvent::UnroutablePeer(ref peer) => {
-                events_handler.on_peer_unroutable(peer);
-            }
+            DiscoveryEvent::UnroutablePeer(_) => {}
         },
         NetworkEvent::Identify(ref id_ev) => match **id_ev {
             IdentifyEvent::Received {

@@ -24,8 +24,9 @@ use locha_p2p::identity::Identity;
 use locha_p2p::runtime::config::RuntimeConfig;
 use locha_p2p::runtime::events::{RuntimeEvents, RuntimeEventsLogger};
 use locha_p2p::runtime::Runtime;
+use locha_p2p::PeerId;
 
-use log::info;
+use log::{error, info};
 
 mod arguments;
 use arguments::Arguments;
@@ -51,10 +52,26 @@ async fn main() {
     let mut discovery = DiscoveryConfig::new(!arguments.dont_bootstrap);
 
     discovery
-        .use_mdns(arguments.use_mdns)
+        .use_mdns(!arguments.disable_mdns)
         .allow_ipv4_private(arguments.allow_ipv4_private)
         .allow_ipv4_shared(arguments.allow_ipv4_shared)
         .allow_ipv6_ula(arguments.allow_ipv6_ula);
+
+    // Reach out to another node if specified
+    for mut addr in arguments.peers {
+        let peer_id = match addr.pop() {
+            Some(libp2p::multiaddr::Protocol::P2p(id_hash)) => {
+                PeerId::from_multihash(id_hash).expect("Invalid PeerId")
+            }
+            _ => {
+                error!("Supplied invalid peer address, must contain a Peer ID");
+                return;
+            }
+        };
+
+        info!("Adding peer {} with address {}", peer_id, addr);
+        discovery.add_address(&peer_id, &addr);
+    }
 
     let config = RuntimeConfig {
         identity,
@@ -73,11 +90,6 @@ async fn main() {
     .unwrap();
 
     task::spawn(runtime_task);
-
-    // Reach out to another node if specified
-    for to_dial in arguments.dials {
-        runtime.dial(to_dial).await
-    }
 
     if !arguments.dont_bootstrap {
         runtime.bootstrap().await;
