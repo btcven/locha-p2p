@@ -78,6 +78,7 @@ use futures::{Future, FutureExt, SinkExt, StreamExt};
 use libp2p::swarm::SwarmEvent;
 
 use libp2p::identify::IdentifyEvent;
+use libp2p::swarm::NetworkBehaviour;
 use libp2p::Multiaddr;
 
 use log::{error, info, trace, warn};
@@ -412,6 +413,10 @@ fn handle_behaviour_event(
                     "found peer {}",
                     peer,
                 );
+
+                for addr in swarm.addresses_of_peer(peer) {
+                    swarm.kademlia().add_address(peer, addr);
+                }
 
                 match Swarm::dial(swarm, peer) {
                     Ok(()) => (),

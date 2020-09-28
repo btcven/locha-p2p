@@ -228,6 +228,10 @@ impl DiscoveryBehaviour {
             error!(target: "locha-p2p", "Couldn't bootstrap: {}", e);
         }
     }
+
+    pub fn kademlia(&mut self) -> &mut Kademlia<MemoryStore> {
+        &mut self.kademlia
+    }
 }
 
 impl DiscoveryBehaviour {
@@ -583,6 +587,9 @@ pub mod tests {
         );
         assert!(!discovery
             .is_address_not_allowed(&"/ip4/186.200.4.1".parse().unwrap()));
+        assert!(!discovery.is_address_not_allowed(
+            &"/ip4/85.53.137.144/tcp/50130".parse().unwrap()
+        ));
         assert!(
             !discovery.is_address_not_allowed(&"/ip6/2001::2".parse().unwrap())
         );

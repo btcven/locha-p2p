@@ -13,6 +13,8 @@
 // limitations under the License.
 
 use libp2p::identify::{Identify, IdentifyEvent};
+use libp2p::kad::record::store::MemoryStore;
+use libp2p::kad::Kademlia;
 use libp2p::swarm::toggle::Toggle;
 use libp2p::NetworkBehaviour;
 
@@ -74,6 +76,10 @@ impl Network {
     /// Start bootstrap process
     pub fn bootstrap(&mut self) {
         self.discovery.bootstrap();
+    }
+
+    pub fn kademlia(&mut self) -> &mut Kademlia<MemoryStore> {
+        self.discovery.kademlia()
     }
 }
 
