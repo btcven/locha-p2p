@@ -54,8 +54,6 @@ use wasm_timer::Delay;
 
 use void::Void;
 
-use log::{error, info, trace};
-
 pub struct UpnpBehaviour {
     interval: Option<Delay>,
     observed_addr: Option<Ipv4Addr>,
@@ -189,10 +187,10 @@ impl NetworkBehaviour for UpnpBehaviour {
 
             if let Some(ref ip) = self.observed_addr {
                 for port in self.ports.iter() {
-                    let parts = vec![Protocol::Ip4(*ip), Protocol::Tcp(*port)];
-                    let address = Multiaddr::from_iter(parts);
+                    let address =
+                        libp2p::build_multiaddr!(Ip4(*ip), Tcp(*port));
 
-                    trace!(
+                    log::info!(
                         target: "locha-p2p",
                         "UPnP: Observed address {}",
                         address
@@ -220,7 +218,7 @@ impl NetworkBehaviour for UpnpBehaviour {
         let interval = self.interval.as_mut().unwrap();
         match Pin::new(interval).poll(cx) {
             Poll::Ready(_) => {
-                trace!(
+                log::debug!(
                     target: "locha-p2p",
                     "periodic check of external IP and port mapping"
                 );
@@ -245,7 +243,7 @@ impl NetworkBehaviour for UpnpBehaviour {
                             );
 
                             if res.is_ok() {
-                                info!(
+                                log::info!(
                                     target: "locha-p2p",
                                     "UPnP: Port {} mapped successfully",
                                     port
@@ -257,7 +255,7 @@ impl NetworkBehaviour for UpnpBehaviour {
                             vec![Protocol::Ip4(*ip), Protocol::Tcp(*port)];
                         let address = Multiaddr::from_iter(parts);
 
-                        trace!(
+                        log::info!(
                             target: "locha-p2p",
                             "UPnP: Observed address {}",
                             address
@@ -300,7 +298,7 @@ fn discover() -> Result<
     {
         Some(igd) => {
             if igd.data.is_none() {
-                error!(target: "locha-p2p", "UPnP: No valid IGDs found");
+                log::error!(target: "locha-p2p", "UPnP: No valid IGDs found");
                 return Ok(None);
             }
 

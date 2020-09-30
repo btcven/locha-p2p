@@ -14,6 +14,9 @@ futures = "0.3"
 libp2p = "0.28"
 log = "0.4"
 parking_lot  = "0.11"
-miniupnpc = { version = "0.1", path = "miniupnpc" }
 void = "1"
 wasm-timer = "0.2"
+
+# Not available on WASM
+[target.'cfg(not(target_os = "unknown"))'.dependencies]
+miniupnpc = { version = "0.1", path = "miniupnpc" }

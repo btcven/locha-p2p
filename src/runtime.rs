@@ -24,7 +24,6 @@
 //! # Examples
 //!
 //! ```rust
-//! use locha_p2p::discovery::DiscoveryConfig;
 //! use locha_p2p::identity::Identity;
 //! use locha_p2p::runtime::events::RuntimeEvents;
 //! use locha_p2p::runtime::config::RuntimeConfig;
@@ -47,10 +46,13 @@
 //!     channel_cap: 20,
 //!     heartbeat_interval: 5,
 //!
-//!     discovery: DiscoveryConfig::new(true),
+//!     upnp: false,
+//!     mdns: false,
+//!
+//!     bootstrap_nodes: Vec::new(),
 //! };
 //!
-//! let (runtime, runtime_task) = Runtime::new(config, Box::new(EventsHandler), false).unwrap();
+//! let (runtime, runtime_task) = Runtime::new(config, Box::new(EventsHandler)).unwrap();
 //!
 //! async_std::task::spawn(runtime_task);
 //!
@@ -68,6 +70,7 @@ pub mod error;
 pub mod events;
 
 pub use libp2p::core::network::NetworkInfo;
+use libp2p::swarm::SwarmEvent;
 
 use futures::channel::mpsc::{channel, Receiver, Sender};
 use futures::channel::oneshot::{
@@ -75,23 +78,13 @@ use futures::channel::oneshot::{
 };
 use futures::{Future, FutureExt, SinkExt, StreamExt};
 
-use libp2p::swarm::SwarmEvent;
-
-use libp2p::identify::IdentifyEvent;
-use libp2p::swarm::NetworkBehaviour;
-use libp2p::Multiaddr;
-
-use log::{error, info, trace, warn};
-
 use self::config::RuntimeConfig;
 use self::error::Error;
 use self::events::RuntimeEvents;
 
-use crate::discovery::DiscoveryEvent;
-use crate::gossip::{GossipsubEvent, Topic};
-use crate::network::NetworkEvent;
-use crate::PeerId;
-use crate::{build_swarm, Swarm};
+use crate::p2p::pubsub::Topic;
+use crate::p2p::{build_swarm, BehaviourEvent, BehaviourEventStream, Swarm};
+use crate::{Multiaddr, PeerId};
 
 /// Locha P2P runtime
 #[derive(Clone)]
@@ -113,11 +106,16 @@ impl Runtime {
     pub fn new(
         config: RuntimeConfig,
         events_handler: Box<dyn RuntimeEvents>,
-        upnp: bool,
     ) -> Result<(Runtime, impl Future<Output = ()> + Send + 'static), Error>
     {
-        let mut swarm =
-            build_swarm(&config.identity, config.discovery.clone(), upnp)?;
+        // TODO: fine tune events channel size
+        let (mut swarm, event_stream) = build_swarm(
+            &config.identity,
+            config.upnp,
+            config.mdns,
+            20,
+            config.bootstrap_nodes.iter(),
+        )?;
         // Create a Gossipsub topic
         // TODO: Make topics dynamic per peer
         let topic = Topic::new("locha-p2p-testnet".into());
@@ -126,7 +124,7 @@ impl Runtime {
         match Swarm::listen_on(&mut swarm, config.listen_addr.clone()) {
             Ok(_) => (),
             Err(e) => {
-                error!(
+                log::error!(
                     target: "locha-p2p",
                     "Could not listen on {}: {}",
                     config.listen_addr, e
@@ -137,12 +135,15 @@ impl Runtime {
 
         let (tx, rx) = channel(config.channel_cap);
 
-        Ok((Runtime { tx }, task(swarm, events_handler, topic, rx)))
+        Ok((
+            Runtime { tx },
+            task(swarm, event_stream, events_handler, topic, rx),
+        ))
     }
 
     /// Start bootstrapping
     pub async fn bootstrap(&self) {
-        trace!(target: "locha-p2p", "starting bootstrap");
+        log::trace!(target: "locha-p2p", "starting bootstrap");
 
         self.tx
             .clone()
@@ -152,7 +153,7 @@ impl Runtime {
     }
 
     pub async fn network_info(&self) -> NetworkInfo {
-        trace!(target: "locha-p2p", "getting network information");
+        log::trace!(target: "locha-p2p", "getting network information");
 
         let (tx, rx) = oneshot_channel::<NetworkInfo>();
 
@@ -167,7 +168,7 @@ impl Runtime {
 
     /// Stop the runtime.
     pub async fn stop(&self) {
-        trace!(target: "locha-p2p", "stopping runtime");
+        log::trace!(target: "locha-p2p", "stopping runtime");
 
         // Send Stop action and wait for thread to finish.
         self.tx.clone().send(RuntimeAction::Stop).await.unwrap()
@@ -175,7 +176,7 @@ impl Runtime {
 
     /// Dial a peer using it's multiaddress
     pub async fn dial(&self, multiaddr: Multiaddr) {
-        trace!(target: "locha-p2p", "dialing: {}", multiaddr);
+        log::trace!(target: "locha-p2p", "dialing: {}", multiaddr);
 
         self.tx
             .clone()
@@ -186,7 +187,7 @@ impl Runtime {
 
     /// Send a message
     pub async fn send_message(&self, message: String) {
-        trace!(target: "locha-p2p", "sending message");
+        log::trace!(target: "locha-p2p", "sending message");
 
         self.tx
             .clone()
@@ -196,7 +197,7 @@ impl Runtime {
     }
 
     pub async fn external_addresses(&self) -> Vec<Multiaddr> {
-        trace!(target: "locha-p2p", "getting external addresses");
+        log::trace!(target: "locha-p2p", "getting external addresses");
 
         let (tx, rx) = oneshot_channel::<Vec<Multiaddr>>();
 
@@ -210,7 +211,7 @@ impl Runtime {
     }
 
     pub async fn peer_id(&self) -> PeerId {
-        trace!(target: "locha-p2p", "getting peer ID");
+        log::trace!(target: "locha-p2p", "getting peer ID");
 
         let (tx, rx) = oneshot_channel::<PeerId>();
         self.tx
@@ -236,13 +237,12 @@ enum RuntimeAction {
 
 async fn task(
     mut swarm: Swarm,
+    mut event_stream: BehaviourEventStream,
     mut events_handler: Box<dyn RuntimeEvents>,
     topic: Topic,
     mut rx: Receiver<RuntimeAction>,
 ) {
     loop {
-        trace!(target: "locha-p2p", "loop");
-
         futures::select_biased! {
             action = rx.next().fuse() => {
                 let action = action.unwrap_or(RuntimeAction::Stop);
@@ -260,7 +260,7 @@ async fn task(
                     }
                     RuntimeAction::Dial(address) => {
                         if let Err(e) = Swarm::dial_addr(&mut swarm, address.clone()) {
-                            error!(
+                            log::error!(
                                 target: "locha-p2p",
                                 "dial to {} failed: {}",
                                 address, e
@@ -271,7 +271,7 @@ async fn task(
                         if let Err(e) =
                             swarm.publish(&topic.clone(), message.as_bytes())
                         {
-                            error!(
+                            log::error!(
                                 target: "locha-p2p",
                                 "couldn't send message: {:?}",
                                 e
@@ -290,22 +290,26 @@ async fn task(
                     }
                 }
             },
+            behaviour_event = event_stream.next().fuse() => {
+                match behaviour_event.unwrap() {
+                    BehaviourEvent::Message(_, _, msg) => {
+                        events_handler.on_new_message(msg);
+                    }
+                }
+            },
             ev = swarm.next_event().fuse() => {
-                handle_event(&mut swarm, &mut *events_handler, &ev).await;
+                handle_event(&mut *events_handler, &ev).await;
             },
         }
     }
 }
 
 async fn handle_event<THandleErr: std::error::Error>(
-    swarm: &mut Swarm,
     events_handler: &mut dyn RuntimeEvents,
-    swarm_event: &SwarmEvent<NetworkEvent, THandleErr>,
+    swarm_event: &SwarmEvent<(), THandleErr>,
 ) {
     match *swarm_event {
-        SwarmEvent::Behaviour(ref ev) => {
-            handle_behaviour_event(swarm, events_handler, ev);
-        }
+        SwarmEvent::Behaviour(_) => (),
         SwarmEvent::ConnectionEstablished {
             ref peer_id,
             ref endpoint,
@@ -391,54 +395,45 @@ async fn handle_event<THandleErr: std::error::Error>(
     }
 }
 
-fn handle_behaviour_event(
-    swarm: &mut Swarm,
-    events_handler: &mut dyn RuntimeEvents,
-    event: &NetworkEvent,
-) {
-    match *event {
-        NetworkEvent::Gossipsub(ref gossip_ev) => {
-            if let GossipsubEvent::Message(ref _peer, ref _id, ref message) =
-                **gossip_ev
-            {
-                let contents = String::from_utf8_lossy(message.data.as_slice())
-                    .into_owned();
-                events_handler.on_new_message(contents);
-            }
-        }
-        NetworkEvent::Discovery(ref disc_ev) => match *disc_ev {
-            DiscoveryEvent::Discovered(ref peer) => {
-                info!(
-                    target: "locha-p2p",
-                    "found peer {}",
-                    peer,
-                );
-
-                for addr in swarm.addresses_of_peer(peer) {
-                    swarm.kademlia().add_address(peer, addr);
-                }
-
-                match Swarm::dial(swarm, peer) {
-                    Ok(()) => (),
-                    Err(e) => {
-                        warn!(
-                            target: "locha-p2p",
-                            "couldn't dial peer {}: {}",
-                            peer, e,
-                        );
-                    }
-                }
-            }
-            DiscoveryEvent::UnroutablePeer(_) => {}
-        },
-        NetworkEvent::Identify(ref id_ev) => match **id_ev {
-            IdentifyEvent::Received {
-                ref observed_addr, ..
-            } => {
-                trace!(target: "locha-p2p", "observed addr {}", observed_addr);
-            }
-            IdentifyEvent::Sent { .. } => (),
-            IdentifyEvent::Error { .. } => (),
-        },
-    }
-}
+//fn handle_behaviour_event(
+//    swarm: &mut Swarm,
+//    events_handler: &mut dyn RuntimeEvents,
+//    event: &NetworkEvent,
+//) {
+//    match *event {
+//        NetworkEvent::Gossipsub(ref gossip_ev) => {
+//            if let GossipsubEvent::Message(ref _peer, ref _id, ref message) =
+//                **gossip_ev
+//            {
+//                let contents = String::from_utf8_lossy(message.data.as_slice())
+//                    .into_owned();
+//                events_handler.on_new_message(contents);
+//            }
+//        }
+//        NetworkEvent::Discovery(ref disc_ev) => match *disc_ev {
+//            DiscoveryEvent::Discovered(ref peer) => {
+//                log::info!(
+//                    target: "locha-p2p",
+//                    "found peer {}",
+//                    peer,
+//                );
+//
+//                for addr in swarm.addresses_of_peer(peer) {
+//                    swarm.kademlia().add_address(peer, addr);
+//                }
+//
+//                match Swarm::dial(swarm, peer) {
+//                    Ok(()) => (),
+//                    Err(e) => {
+//                        warn!(
+//                            target: "locha-p2p",
+//                            "couldn't dial peer {}: {}",
+//                            peer, e,
+//                        );
+//                    }
+//                }
+//            }
+//            DiscoveryEvent::UnroutablePeer(_) => {}
+//        },
+//    }
+//}

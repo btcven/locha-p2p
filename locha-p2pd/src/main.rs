@@ -19,8 +19,8 @@ use clap::{load_yaml, App};
 use async_std::io;
 use async_std::task;
 
-use locha_p2p::discovery::DiscoveryConfig;
 use locha_p2p::identity::Identity;
+use locha_p2p::p2p::behaviour;
 use locha_p2p::runtime::config::RuntimeConfig;
 use locha_p2p::runtime::events::{RuntimeEvents, RuntimeEventsLogger};
 use locha_p2p::runtime::Runtime;
@@ -49,24 +49,28 @@ async fn main() {
         .expect("couldn't load identity file");
     info!("our peer id: {}", identity.id());
 
-    let mut discovery = DiscoveryConfig::new(!arguments.dont_bootstrap);
-
-    discovery.use_mdns(!arguments.disable_mdns);
-
     // Reach out to another node if specified
-    for mut addr in arguments.peers {
-        let peer_id = match addr.pop() {
-            Some(libp2p::multiaddr::Protocol::P2p(id_hash)) => {
-                PeerId::from_multihash(id_hash).expect("Invalid PeerId")
-            }
-            _ => {
-                error!("Supplied invalid peer address, must contain a Peer ID");
-                return;
-            }
-        };
+    let mut bootstrap_nodes = Vec::new();
+    if !arguments.dont_bootstrap {
+        bootstrap_nodes
+            .extend_from_slice(behaviour::bootstrap_nodes().as_slice());
 
-        info!("Adding peer {} with address {}", peer_id, addr);
-        discovery.add_address(&peer_id, &addr);
+        for mut addr in arguments.peers {
+            let peer_id = match addr.pop() {
+                Some(libp2p::multiaddr::Protocol::P2p(id_hash)) => {
+                    PeerId::from_multihash(id_hash).expect("Invalid PeerId")
+                }
+                _ => {
+                    error!(
+                        "Supplied invalid peer address, must contain a Peer ID"
+                    );
+                    return;
+                }
+            };
+
+            info!("Adding peer {} with address {}", peer_id, addr);
+            bootstrap_nodes.push((peer_id, addr));
+        }
     }
 
     let config = RuntimeConfig {
@@ -75,15 +79,15 @@ async fn main() {
         heartbeat_interval: 10,
         listen_addr: arguments.listen_addr,
 
-        discovery,
+        upnp: !arguments.disable_upnp,
+        mdns: !arguments.disable_mdns,
+
+        bootstrap_nodes,
     };
 
-    let (runtime, runtime_task) = Runtime::new(
-        config,
-        Box::new(RuntimeEventsLogger::new(EventsHandler)),
-        true,
-    )
-    .unwrap();
+    let (runtime, runtime_task) =
+        Runtime::new(config, Box::new(RuntimeEventsLogger::new(EventsHandler)))
+            .unwrap();
 
     task::spawn(runtime_task);
 

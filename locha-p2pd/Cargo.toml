@@ -16,7 +16,7 @@ workspace = "../"
 clap = { version = "~2.27.0", features = ["yaml"] }
 env_logger = "0.7"
 futures = "0.3"
-libp2p = "0.24"
+libp2p = "0.28"
 locha-p2p = { version = "0.1", path = "../" }
 log = "0.4"
 async-std = { version = "1", features = ["unstable", "attributes"] }
