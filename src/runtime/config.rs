@@ -14,11 +14,10 @@
 
 //! # Runtime configuration
 
-use libp2p::Multiaddr;
-
-use crate::discovery::DiscoveryConfig;
 use crate::identity::Identity;
+use crate::{Multiaddr, PeerId};
 
+/// Runtime configuration
 #[derive(Debug)]
 pub struct RuntimeConfig {
     pub identity: Identity,
@@ -26,5 +25,8 @@ pub struct RuntimeConfig {
     pub channel_cap: usize,
     pub heartbeat_interval: u64,
 
-    pub discovery: DiscoveryConfig,
+    pub mdns: bool,
+    pub upnp: bool,
+
+    pub bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
 }

@@ -23,9 +23,12 @@ args:
         help: Identity file path
         default_value: "secret_key"
         takes_value: true
+    - disable-upnp:
+        long: disable-upnp
+        help: Disable UPnP.
     - disable-mdns:
         long: disable-mdns
-        help: Disable discovery through mDNS.
+        help: Disable local peer discovery using mDNS.
     - dont-bootstrap:
         long: dont-bootstrap
         help: Don't do bootstrap with the default nodes.

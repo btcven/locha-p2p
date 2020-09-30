@@ -18,12 +18,12 @@ use std::time::Duration;
 
 use libp2p::gossipsub::GossipsubConfig;
 use libp2p::gossipsub::GossipsubConfigBuilder;
-use libp2p::gossipsub::{GossipsubMessage, MessageAuthenticity, MessageId};
+use libp2p::gossipsub::{GossipsubMessage, MessageAuthenticity};
 
 use crate::identity::Identity;
 
 pub use libp2p::gossipsub::error::PublishError;
-pub use libp2p::gossipsub::{Gossipsub, GossipsubEvent, Topic};
+pub use libp2p::gossipsub::{Gossipsub, GossipsubEvent, MessageId, Topic};
 
 /// Gossipsub protocol name for Locha P2P Chat
 pub const CHAT_SERVICE_GOSSIP_PROTCOL_ID: &[u8] = b"/locha/gossip/1.0.0";

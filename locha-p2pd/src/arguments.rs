@@ -25,6 +25,7 @@ pub struct Arguments {
     pub peers: Vec<Multiaddr>,
     pub identity: PathBuf,
 
+    pub disable_upnp: bool,
     pub disable_mdns: bool,
     pub dont_bootstrap: bool,
 }
@@ -47,6 +48,7 @@ impl Arguments {
             peers,
             identity,
 
+            disable_upnp: matches.is_present("disable-upnp"),
             disable_mdns: matches.is_present("disable-mdns"),
             dont_bootstrap: matches.is_present("dont-bootstrap"),
         }
