@@ -173,7 +173,7 @@ impl Behaviour {
     ///
     /// - This will add the peer to the Kademlia routing table.
     pub fn add_peer(&mut self, peer: &PeerId, addr: &Multiaddr) {
-        log::info!(target: "locha-p2p", "adding peer {} to routing table", peer);
+        log::debug!(target: "locha-p2p", "adding peer {} to routing table", peer);
 
         self.kademlia.add_address(peer, addr.clone());
     }
@@ -208,7 +208,7 @@ impl NetworkBehaviourEventProcess<MdnsEvent> for Behaviour {
     fn inject_event(&mut self, event: MdnsEvent) {
         if let MdnsEvent::Discovered(addrs) = event {
             for (ref peer, ref addr) in addrs {
-                log::info!(target: "locha-p2p", "mDNS local peer {} on {}", peer, addr);
+                log::debug!(target: "locha-p2p", "mDNS local peer {} on {}", peer, addr);
                 // Add peer to Kademlia routing table
                 self.add_peer(peer, addr);
             }

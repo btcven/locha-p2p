@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::io::Write;
 use std::path::Path;
 
 use clap::{load_yaml, App};
 
-use async_std::io;
 use async_std::task;
 
 use locha_p2p::identity::Identity;
@@ -28,6 +28,9 @@ use locha_p2p::PeerId;
 
 use log::{error, info};
 
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
+
 mod arguments;
 use arguments::Arguments;
 
@@ -38,7 +41,10 @@ impl RuntimeEvents for EventsHandler {}
 #[async_std::main]
 async fn main() {
     env_logger::Builder::new()
-        .filter_level(log::LevelFilter::Trace)
+        .format(|buf, record| {
+            writeln!(buf, "[{}] - {}", record.level(), record.args())
+        })
+        .filter_level(log::LevelFilter::Info)
         .init();
 
     let cli_yaml = load_yaml!("cli.yml");
@@ -95,17 +101,81 @@ async fn main() {
         runtime.bootstrap().await;
     }
 
-    let input = io::stdin();
-    loop {
-        let mut line = String::new();
-        input.read_line(&mut line).await.unwrap();
-        if line == "exit\n" || line == "exit\r\n" || line == "exit\r" {
-            break;
-        }
+    let mut rl = Editor::<()>::new();
+    rl.load_history(".locha_p2p_history").ok();
 
-        runtime.send_message(line).await;
+    loop {
+        match rl.readline(">>> ") {
+            Ok(line) => {
+                if !line.starts_with("/") && !line.is_empty() {
+                    runtime.send_message(line).await;
+                } else if !line.is_empty() {
+                    rl.add_history_entry(line.as_str());
+
+                    match line.as_str() {
+                        "/id" => {
+                            println!("Peer ID: {}", runtime.peer_id().await);
+                        }
+                        "/network_info" => {
+                            let info = runtime.network_info().await;
+
+                            println!("Connected peers: {}", info.num_peers);
+                            println!(
+                                "Total connections: {}",
+                                info.num_connections
+                            );
+                            println!(
+                                "Pending connections: {}",
+                                info.num_connections_pending
+                            );
+                            println!(
+                                "Connections established: {}",
+                                info.num_connections_established
+                            );
+                        }
+                        "/kbuckets" => {
+                            let kbuckets = runtime.kbuckets().await;
+                            if kbuckets.len() > 0 {
+                                for (i, kbucket) in kbuckets.iter().enumerate()
+                                {
+                                    println!("KBucket {}:", i);
+
+                                    for entry in kbucket {
+                                        println!(
+                                            "- \"{}\": {:?}",
+                                            entry.node.key.preimage(),
+                                            entry.node.value
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        "/external_addresses" => {
+                            let addrs = runtime.external_addresses().await;
+                            if addrs.len() > 0 {
+                                println!("External addresses:");
+                                for addr in addrs {
+                                    println!("- {}", addr);
+                                }
+                            }
+                        }
+                        _ => {
+                            println!("Invalid command");
+                        }
+                    }
+                }
+
+                // TODO: handle commands
+            }
+            Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => break,
+            Err(e) => {
+                error!(target: "locha-p2p", "readline error: {}", e);
+                break;
+            }
+        }
     }
 
+    info!(target: "locha-p2p", "exiting...");
     runtime.stop().await
 }
 

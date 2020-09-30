@@ -21,3 +21,4 @@ locha-p2p = { version = "0.1", path = "../" }
 log = "0.4"
 async-std = { version = "1", features = ["unstable", "attributes"] }
 hex = "0.4"
+rustyline = "6"

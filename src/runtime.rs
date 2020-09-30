@@ -70,6 +70,9 @@ pub mod error;
 pub mod events;
 
 pub use libp2p::core::network::NetworkInfo;
+pub use libp2p::kad::Addresses;
+pub use libp2p::kad::kbucket::{EntryView, Key};
+
 use libp2p::swarm::SwarmEvent;
 
 use futures::channel::mpsc::{channel, Receiver, Sender};
@@ -152,6 +155,15 @@ impl Runtime {
             .unwrap()
     }
 
+    pub async fn kbuckets(&self) -> Vec<Vec<EntryView<Key<PeerId>, Addresses>>> {
+        log::trace!(target: "locha-p2p", "retrieving kbuckets");
+
+        let (tx, rx)  = oneshot_channel::<Vec<Vec<EntryView<Key<PeerId>, Addresses>>>>();
+        self.tx.clone().send(RuntimeAction::Kbuckets(tx)).await.unwrap();
+
+        rx.await.unwrap()
+    }
+
     pub async fn network_info(&self) -> NetworkInfo {
         log::trace!(target: "locha-p2p", "getting network information");
 
@@ -227,6 +239,7 @@ impl Runtime {
 /// Runtime action
 enum RuntimeAction {
     Bootstrap,
+    Kbuckets(OneshotSender<Vec<Vec<EntryView<Key<PeerId>, Addresses>>>>),
     NetworkInfo(OneshotSender<NetworkInfo>),
     Stop,
     Dial(Multiaddr),
@@ -250,6 +263,15 @@ async fn task(
                 match action {
                     RuntimeAction::Bootstrap => {
                         swarm.bootstrap();
+                    }
+                    RuntimeAction::Kbuckets(tx) => {
+                        let kbuckets = swarm
+                            .kademlia()
+                            .kbuckets()
+                            .map(|kbucket| kbucket.iter().map(|entry| entry.to_owned()).collect())
+                            .collect();
+
+                        tx.send(kbuckets).ok();
                     }
                     RuntimeAction::NetworkInfo(tx) => {
                         tx.send(Swarm::network_info(&swarm)).ok();
