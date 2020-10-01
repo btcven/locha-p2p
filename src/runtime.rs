@@ -70,8 +70,8 @@ pub mod error;
 pub mod events;
 
 pub use libp2p::core::network::NetworkInfo;
-pub use libp2p::kad::Addresses;
 pub use libp2p::kad::kbucket::{EntryView, Key};
+pub use libp2p::kad::Addresses;
 
 use libp2p::swarm::SwarmEvent;
 
@@ -155,11 +155,18 @@ impl Runtime {
             .unwrap()
     }
 
-    pub async fn kbuckets(&self) -> Vec<Vec<EntryView<Key<PeerId>, Addresses>>> {
+    pub async fn kbuckets(
+        &self,
+    ) -> Vec<Vec<EntryView<Key<PeerId>, Addresses>>> {
         log::trace!(target: "locha-p2p", "retrieving kbuckets");
 
-        let (tx, rx)  = oneshot_channel::<Vec<Vec<EntryView<Key<PeerId>, Addresses>>>>();
-        self.tx.clone().send(RuntimeAction::Kbuckets(tx)).await.unwrap();
+        let (tx, rx) =
+            oneshot_channel::<Vec<Vec<EntryView<Key<PeerId>, Addresses>>>>();
+        self.tx
+            .clone()
+            .send(RuntimeAction::Kbuckets(tx))
+            .await
+            .unwrap();
 
         rx.await.unwrap()
     }
