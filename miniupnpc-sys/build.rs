@@ -101,6 +101,10 @@ fn main() {
         if target_os == "freebsd" || target_os == "macos" {
             build.define("_XOPEN_SOURCE", "600");
         }
+
+        if target_os == "macos" {
+            build.define("_DARWIN_C_SOURCE", None);
+        }
     } else if target_family == "windows" {
         build.file(miniupnpc_dir.join("minissdpc.c"));
         build.define("NDEBUG", None).define("_WIN32_WINNT", "0X501");
