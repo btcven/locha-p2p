@@ -89,6 +89,9 @@ use crate::p2p::pubsub::Topic;
 use crate::p2p::{build_swarm, BehaviourEvent, BehaviourEventStream, Swarm};
 use crate::{Multiaddr, PeerId};
 
+/// An owned Kademlia K-bucket
+pub type Kbucket = Vec<EntryView<Key<PeerId>, Addresses>>;
+
 /// Locha P2P runtime
 #[derive(Clone)]
 pub struct Runtime {
@@ -155,9 +158,7 @@ impl Runtime {
             .unwrap()
     }
 
-    pub async fn kbuckets(
-        &self,
-    ) -> Vec<Vec<EntryView<Key<PeerId>, Addresses>>> {
+    pub async fn kbuckets(&self) -> Vec<Kbucket> {
         log::trace!(target: "locha-p2p", "retrieving kbuckets");
 
         let (tx, rx) =
@@ -246,7 +247,7 @@ impl Runtime {
 /// Runtime action
 enum RuntimeAction {
     Bootstrap,
-    Kbuckets(OneshotSender<Vec<Vec<EntryView<Key<PeerId>, Addresses>>>>),
+    Kbuckets(OneshotSender<Vec<Kbucket>>),
     NetworkInfo(OneshotSender<NetworkInfo>),
     Stop,
     Dial(Multiaddr),
