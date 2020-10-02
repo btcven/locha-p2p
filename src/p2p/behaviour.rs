@@ -15,10 +15,12 @@
 //! # Locha libp2p behaviour
 
 use std::collections::VecDeque;
+use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
 use futures::channel::mpsc::{channel, Receiver, Sender};
+use futures::Future;
 
 use libp2p::identify::{Identify, IdentifyEvent};
 
@@ -40,6 +42,8 @@ use libp2p::NetworkBehaviour;
 use crate::upnp::UpnpBehaviour;
 #[cfg(not(target_os = "unknown"))]
 use libp2p::mdns::{Mdns, MdnsEvent};
+
+use wasm_timer::Delay;
 
 use crate::identity::Identity;
 use crate::p2p::pubsub::MessageId;
@@ -99,6 +103,24 @@ type InEvent = EitherOutput<
     (),
 >;
 
+struct Inner {
+    event_chan: Sender<BehaviourEvent>,
+    pending_actions: VecDeque<NetworkBehaviourAction<InEvent, ()>>,
+    next_query: Delay,
+    next_query_time: Duration,
+}
+
+impl Inner {
+    pub fn new(event_chan: Sender<BehaviourEvent>) -> Inner {
+        Inner {
+            event_chan,
+            pending_actions: VecDeque::new(),
+            next_query: Delay::new(Duration::from_secs(0)),
+            next_query_time: Duration::from_secs(1),
+        }
+    }
+}
+
 #[derive(NetworkBehaviour)]
 #[behaviour(poll_method = "poll")]
 pub struct Behaviour {
@@ -111,9 +133,7 @@ pub struct Behaviour {
     identify: Identify,
 
     #[behaviour(ignore)]
-    event_chan: Sender<BehaviourEvent>,
-    #[behaviour(ignore)]
-    pending_actions: VecDeque<NetworkBehaviourAction<InEvent, ()>>,
+    inner: Inner,
 }
 
 impl Behaviour {
@@ -157,8 +177,7 @@ impl Behaviour {
                 Toggle::from(None)
             },
 
-            event_chan: tx,
-            pending_actions: VecDeque::new(),
+            inner: Inner::new(tx),
         };
 
         let mut len = 0;
@@ -228,12 +247,28 @@ impl Behaviour {
 
     fn poll(
         &mut self,
-        _: &mut Context<'_>,
+        cx: &mut Context<'_>,
         _: &mut impl PollParameters,
     ) -> Poll<NetworkBehaviourAction<InEvent, ()>> {
         // Process pending actions first
-        if let Some(act) = self.pending_actions.pop_front() {
+        if let Some(act) = self.inner.pending_actions.pop_front() {
             return Poll::Ready(act);
+        }
+
+        if let Poll::Ready(_) = Pin::new(&mut self.inner.next_query).poll(cx) {
+            let id = PeerId::random();
+            log::debug!(
+                target: "locha-p2p",
+                "starting random Kademlia query with peer {}",
+                id
+            );
+            self.kademlia.get_closest_peers(id);
+
+            self.inner.next_query = Delay::new(self.inner.next_query_time);
+            self.inner.next_query_time = std::cmp::min(
+                self.inner.next_query_time * 2,
+                Duration::from_secs(60),
+            );
         }
 
         Poll::Pending
@@ -248,7 +283,7 @@ impl NetworkBehaviourEventProcess<MdnsEvent> for Behaviour {
                 // Add peer to Kademlia routing table
                 self.add_peer(peer, addr);
 
-                self.pending_actions.push_back(
+                self.inner.pending_actions.push_back(
                     NetworkBehaviourAction::DialPeer {
                         peer_id: peer.clone(),
                         condition: DialPeerCondition::Disconnected,
@@ -261,8 +296,8 @@ impl NetworkBehaviourEventProcess<MdnsEvent> for Behaviour {
 
 impl NetworkBehaviourEventProcess<KademliaEvent> for Behaviour {
     fn inject_event(&mut self, event: KademliaEvent) {
-        if let KademliaEvent::QueryResult { result, .. } = event {
-            match result {
+        match event {
+            KademliaEvent::QueryResult { result, .. } => match result {
                 QueryResult::Bootstrap(Ok(info)) => {
                     log::info!(
                         target: "locha-p2p",
@@ -276,8 +311,30 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for Behaviour {
                         "bootstrap failed",
                     );
                 }
+                QueryResult::GetClosestPeers(Ok(info)) => {
+                    log::info!(
+                        target: "locha-p2p",
+                        "found {} peers",
+                        info.peers.len(),
+                    );
+                }
+                QueryResult::GetClosestPeers(Err(_)) => {
+                    log::error!(
+                        target: "locha-p2p",
+                        "failed to find closest peers",
+                    );
+                }
                 _ => (),
+            },
+            KademliaEvent::RoutingUpdated { peer, .. } => {
+                self.inner.pending_actions.push_back(
+                    NetworkBehaviourAction::DialPeer {
+                        peer_id: peer,
+                        condition: DialPeerCondition::Disconnected,
+                    },
+                );
             }
+            _ => (),
         }
     }
 }
@@ -287,11 +344,9 @@ impl NetworkBehaviourEventProcess<GossipsubEvent> for Behaviour {
         if let GossipsubEvent::Message(ref peer, ref id, ref bytes) = event {
             let msg =
                 String::from_utf8_lossy(bytes.data.as_slice()).into_owned();
-            if let Err(e) = self.event_chan.try_send(BehaviourEvent::Message(
-                peer.clone(),
-                id.clone(),
-                msg,
-            )) {
+            if let Err(e) = self.inner.event_chan.try_send(
+                BehaviourEvent::Message(peer.clone(), id.clone(), msg),
+            ) {
                 if e.is_full() {
                     log::error!(
                         target: "locha-p2p",
