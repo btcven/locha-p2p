@@ -14,17 +14,25 @@
 
 //! # Locha libp2p behaviour
 
+use std::collections::VecDeque;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use futures::channel::mpsc::{channel, Receiver, Sender};
 
 use libp2p::identify::{Identify, IdentifyEvent};
 
+use libp2p::kad::handler::KademliaHandlerIn;
 use libp2p::kad::record::store::MemoryStore;
+use libp2p::kad::QueryId;
 use libp2p::kad::{Kademlia, KademliaConfig, KademliaEvent, QueryResult};
 
+use libp2p::gossipsub::GossipsubRpc;
+
+use libp2p::core::either::EitherOutput;
 use libp2p::swarm::toggle::Toggle;
-use libp2p::swarm::NetworkBehaviourEventProcess;
+use libp2p::swarm::{DialPeerCondition, PollParameters};
+use libp2p::swarm::{NetworkBehaviourAction, NetworkBehaviourEventProcess};
 use libp2p::NetworkBehaviour;
 
 // Not available on WASM
@@ -80,7 +88,19 @@ pub enum BehaviourEvent {
     Message(PeerId, MessageId, String),
 }
 
+type InEvent = EitherOutput<
+    EitherOutput<
+        EitherOutput<
+            EitherOutput<Void, KademliaHandlerIn<QueryId>>,
+            GossipsubRpc,
+        >,
+        Void,
+    >,
+    (),
+>;
+
 #[derive(NetworkBehaviour)]
+#[behaviour(poll_method = "poll")]
 pub struct Behaviour {
     #[cfg(not(target_os = "unknown"))]
     mdns: Toggle<Mdns>,
@@ -92,6 +112,8 @@ pub struct Behaviour {
 
     #[behaviour(ignore)]
     event_chan: Sender<BehaviourEvent>,
+    #[behaviour(ignore)]
+    pending_actions: VecDeque<NetworkBehaviourAction<InEvent, ()>>,
 }
 
 impl Behaviour {
@@ -136,6 +158,7 @@ impl Behaviour {
             },
 
             event_chan: tx,
+            pending_actions: VecDeque::new(),
         };
 
         let mut len = 0;
@@ -202,6 +225,19 @@ impl Behaviour {
     pub fn kademlia(&mut self) -> &mut Kademlia<MemoryStore> {
         &mut self.kademlia
     }
+
+    fn poll(
+        &mut self,
+        _: &mut Context<'_>,
+        _: &mut impl PollParameters,
+    ) -> Poll<NetworkBehaviourAction<InEvent, ()>> {
+        // Process pending actions first
+        if let Some(act) = self.pending_actions.pop_front() {
+            return Poll::Ready(act);
+        }
+
+        Poll::Pending
+    }
 }
 
 impl NetworkBehaviourEventProcess<MdnsEvent> for Behaviour {
@@ -211,6 +247,13 @@ impl NetworkBehaviourEventProcess<MdnsEvent> for Behaviour {
                 log::debug!(target: "locha-p2p", "mDNS local peer {} on {}", peer, addr);
                 // Add peer to Kademlia routing table
                 self.add_peer(peer, addr);
+
+                self.pending_actions.push_back(
+                    NetworkBehaviourAction::DialPeer {
+                        peer_id: peer.clone(),
+                        condition: DialPeerCondition::Disconnected,
+                    },
+                );
             }
         }
     }
