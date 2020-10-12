@@ -36,7 +36,7 @@
 use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
 use std::iter::FromIterator;
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, SocketAddrV4};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -120,7 +120,7 @@ impl UpnpBehaviour {
     /// Update our external IPv4 address by asking IGDs on our network.
     fn update_ip(
         &mut self,
-    ) -> Option<(miniupnpc::Urls, miniupnpc::IgdData, Ipv4Addr)> {
+    ) -> Option<(miniupnpc::Urls, miniupnpc::IgdData, SocketAddrV4)> {
         match discover() {
             Ok(Some((urls, data, lanaddr))) => {
                 self.observed_addr =
@@ -283,7 +283,7 @@ impl NetworkBehaviour for UpnpBehaviour {
 }
 
 fn discover() -> Result<
-    Option<(miniupnpc::Urls, miniupnpc::IgdData, Ipv4Addr)>,
+    Option<(miniupnpc::Urls, miniupnpc::IgdData, SocketAddrV4)>,
     miniupnpc::Error,
 > {
     match miniupnpc::discover(
