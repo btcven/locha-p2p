@@ -195,14 +195,22 @@ impl DeviceList {
                 .to_string_lossy()
                 .into_owned();
 
+            let lan_address = match SocketAddrV4::from_str(lan_address.as_ref())
+            {
+                Ok(lan_address) => lan_address,
+                Err(_) => {
+                    let ip4 = match Ipv4Addr::from_str(lan_address.as_ref()) {
+                        Ok(ip4) => ip4,
+                        Err(_) => return None,
+                    };
+                    SocketAddrV4::new(ip4, 1900)
+                }
+            };
+
             Some(ValidIgd {
                 urls: Urls(urls),
                 data: if is_igd { Some(IgdData(data)) } else { None },
-                lan_address: SocketAddrV4::from_str(lan_address.as_ref())
-                    .unwrap_or(SocketAddrV4::new(
-                        Ipv4Addr::from_str(lan_address.as_ref()).unwrap(),
-                        1900,
-                    )),
+                lan_address,
                 connected: is_connected,
             })
         }
