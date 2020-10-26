@@ -33,7 +33,7 @@
 //! struct EventsHandler;
 //!
 //! impl RuntimeEvents for EventsHandler {
-//!     fn on_new_message(&mut self, message: String) {
+//!     fn on_new_message(&mut self, peer_id: &PeerId, message: String) {
 //!         println!("new message: {}", message);
 //!     }
 //! }
@@ -322,8 +322,8 @@ async fn task(
             },
             behaviour_event = event_stream.next().fuse() => {
                 match behaviour_event.unwrap() {
-                    BehaviourEvent::Message(_, _, msg) => {
-                        events_handler.on_new_message(msg);
+                    BehaviourEvent::Message(peer_id, _, msg) => {
+                        events_handler.on_new_message(&peer_id, msg);
                     }
                 }
             },
