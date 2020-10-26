@@ -11,7 +11,7 @@ members = ["locha-p2pd", "miniupnpc", "miniupnpc-sys"]
 [dependencies]
 async-std = { version = "1", features = ["unstable"] }
 futures = "0.3"
-libp2p = "0.28"
+libp2p = "0.29"
 log = "0.4"
 parking_lot  = "0.11"
 void = "1"
