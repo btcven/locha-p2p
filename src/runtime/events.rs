@@ -36,7 +36,12 @@ use log::{debug, info};
 #[allow(unused_variables)]
 pub trait RuntimeEvents: Send {
     /// New message received
-    fn on_new_message(&mut self, message: String) {}
+    ///
+    /// # Parameters
+    ///
+    /// - `peer_id`: The originator peer ID.
+    /// - `message`: The message contents.
+    fn on_new_message(&mut self, peer_id: &PeerId, message: String) {}
 
     /// Connection established to the given peer.
     fn on_connection_established(
@@ -136,10 +141,10 @@ impl<T> RuntimeEvents for RuntimeEventsLogger<T>
 where
     T: RuntimeEvents,
 {
-    fn on_new_message(&mut self, message: String) {
+    fn on_new_message(&mut self, peer_id: &PeerId, message: String) {
         debug!("new message {}", message);
 
-        self.0.on_new_message(message)
+        self.0.on_new_message(peer_id, message)
     }
 
     fn on_connection_established(
