@@ -89,7 +89,7 @@ pub type BehaviourEventStream = Receiver<BehaviourEvent>;
 /// A behaviour event
 pub enum BehaviourEvent {
     /// A new message received from a peer
-    Message(PeerId, MessageId, String),
+    Message(PeerId, MessageId, Vec<u8>),
 }
 
 type InEvent = EitherOutput<
@@ -342,8 +342,8 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for Behaviour {
 impl NetworkBehaviourEventProcess<GossipsubEvent> for Behaviour {
     fn inject_event(&mut self, event: GossipsubEvent) {
         if let GossipsubEvent::Message(ref peer, ref id, ref bytes) = event {
-            let msg =
-                String::from_utf8_lossy(bytes.data.as_slice()).into_owned();
+            let msg: Vec<u8> = bytes.data.as_slice().to_vec();
+
             if let Err(e) = self.inner.event_chan.try_send(
                 BehaviourEvent::Message(peer.clone(), id.clone(), msg),
             ) {
