@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::io;
 use std::time::Duration;
-use std::{error, io};
 
-use libp2p::core::muxing::{StreamMuxer, StreamMuxerBox};
+use libp2p::core::muxing::StreamMuxerBox;
+use libp2p::core::transport::Boxed;
 use libp2p::core::upgrade::{SelectUpgrade, Version};
 use libp2p::dns::DnsConfig;
 use libp2p::mplex::MplexConfig;
@@ -46,23 +47,7 @@ use libp2p::PeerId;
 /// ```
 pub fn build_transport(
     keypair: &Keypair,
-) -> io::Result<
-    impl Transport<
-            Output = (
-                PeerId,
-                impl StreamMuxer<
-                        OutboundSubstream = impl Send,
-                        Substream = impl Send,
-                        Error = impl Into<io::Error>,
-                    > + Send
-                    + Sync,
-            ),
-            Error = impl error::Error + Send,
-            Listener = impl Send,
-            Dial = impl Send,
-            ListenerUpgrade = impl Send,
-        > + Clone,
-> {
+) -> io::Result<Boxed<(PeerId, StreamMuxerBox)>> {
     // Create our low level TCP transport, and on top of it create a
     // WebSockets transport. They can be used both at the same time.
     let tcp = TcpConfig::new().nodelay(true);
@@ -83,8 +68,8 @@ pub fn build_transport(
             yamux::Config::default(),
             MplexConfig::default(),
         ))
-        .map(|(peer, muxer), _| (peer, StreamMuxerBox::new(muxer)))
-        .timeout(Duration::from_secs(20)))
+        .timeout(Duration::from_secs(20))
+        .boxed())
 }
 
 #[cfg(test)]

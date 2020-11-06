@@ -34,7 +34,7 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::os::raw::{c_char, c_int, c_uchar};
 
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, SocketAddrV4};
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -195,10 +195,22 @@ impl DeviceList {
                 .to_string_lossy()
                 .into_owned();
 
+            let lan_address = match SocketAddrV4::from_str(lan_address.as_ref())
+            {
+                Ok(lan_address) => lan_address,
+                Err(_) => {
+                    let ip4 = match Ipv4Addr::from_str(lan_address.as_ref()) {
+                        Ok(ip4) => ip4,
+                        Err(_) => return None,
+                    };
+                    SocketAddrV4::new(ip4, 1900)
+                }
+            };
+
             Some(ValidIgd {
                 urls: Urls(urls),
                 data: if is_igd { Some(IgdData(data)) } else { None },
-                lan_address: Ipv4Addr::from_str(lan_address.as_ref()).unwrap(),
+                lan_address,
                 connected: is_connected,
             })
         }
@@ -266,7 +278,7 @@ unsafe impl<'list> Send for Device<'list> {}
 pub struct ValidIgd {
     pub urls: Urls,
     pub data: Option<IgdData>,
-    pub lan_address: Ipv4Addr,
+    pub lan_address: SocketAddrV4,
     pub connected: bool,
 }
 
@@ -424,7 +436,7 @@ pub mod commands {
     use std::os::raw::{c_char, c_int, c_uint};
     use std::ptr;
 
-    use std::net::Ipv4Addr;
+    use std::net::{Ipv4Addr, SocketAddrV4};
     use std::str::FromStr;
     use std::time::Duration;
 
@@ -444,7 +456,7 @@ pub mod commands {
         service_type: S,
         ext_port: u16,
         in_port: u16,
-        in_client: Ipv4Addr,
+        in_client: SocketAddrV4,
         desc: D,
         proto: Protocol,
         remote_host: Option<&str>,

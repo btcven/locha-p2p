@@ -36,7 +36,13 @@ use arguments::Arguments;
 
 struct EventsHandler;
 
-impl RuntimeEvents for EventsHandler {}
+impl RuntimeEvents for EventsHandler {
+    fn on_new_message(&mut self, peer_id: &PeerId, message: String) {
+        let id = peer_id.to_string();
+        info!("Message from ...{}:", &id[id.len() - 8..]);
+        info!("{}", message);
+    }
+}
 
 #[async_std::main]
 async fn main() {

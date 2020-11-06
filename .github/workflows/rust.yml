@@ -11,8 +11,6 @@ jobs:
           - stable
           - beta
           - nightly
-          #- 1.34.2  # MSRV - Debian oldstable rustc
-          - 1.43.0  # Ubuntu 18.04/20.04 LTS releases bundled rustc
 
     steps:
       - uses: actions/checkout@v2
@@ -41,12 +39,3 @@ jobs:
         with:
           command: clippy
           args: -- -D warnings
-
-      - name: Run cargo-tarpaulin
-        uses: actions-rs/tarpaulin@v0.1.2
-        with:
-          version: '0.14.3'
-          args: '-- --test-threads 1'
-
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v1
