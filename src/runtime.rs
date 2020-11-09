@@ -56,13 +56,6 @@
 //!
 //! async_std::task::spawn(runtime_task);
 //!
-//! async_std::task::spawn(async move {
-//!     // Send a message and the runtime will dispatch it.
-//!     runtime.send_message("Welcome, bienvenido!".to_string()).await;
-//!
-//!     // Can be stopped at any time when requested.
-//!     runtime.stop().await;
-//! });
 //! ```
 
 pub mod config;
