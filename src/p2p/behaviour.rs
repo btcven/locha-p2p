@@ -342,7 +342,7 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for Behaviour {
 impl NetworkBehaviourEventProcess<GossipsubEvent> for Behaviour {
     fn inject_event(&mut self, event: GossipsubEvent) {
         if let GossipsubEvent::Message(ref peer, ref id, ref bytes) = event {
-            let msg: Vec<u8> = bytes.data.as_slice().to_vec();
+            let msg = bytes.data.as_slice().to_vec();
 
             if let Err(e) = self.inner.event_chan.try_send(
                 BehaviourEvent::Message(peer.clone(), id.clone(), msg),
