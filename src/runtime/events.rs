@@ -41,7 +41,7 @@ pub trait RuntimeEvents: Send {
     ///
     /// - `peer_id`: The originator peer ID.
     /// - `message`: The message contents.
-    fn on_new_message(&mut self, peer_id: &PeerId, message: String) {}
+    fn on_new_message(&mut self, peer_id: &PeerId, message: Vec<u8>) {}
 
     /// Connection established to the given peer.
     fn on_connection_established(
@@ -141,8 +141,7 @@ impl<T> RuntimeEvents for RuntimeEventsLogger<T>
 where
     T: RuntimeEvents,
 {
-    fn on_new_message(&mut self, peer_id: &PeerId, message: String) {
-        debug!("new message {}", message);
+    fn on_new_message(&mut self, peer_id: &PeerId, message: Vec<u8>) {
 
         self.0.on_new_message(peer_id, message)
     }

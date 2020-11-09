@@ -56,13 +56,6 @@
 //!
 //! async_std::task::spawn(runtime_task);
 //!
-//! async_std::task::spawn(async move {
-//!     // Send a message and the runtime will dispatch it.
-//!     runtime.send_message("Welcome, bienvenido!".to_string()).await;
-//!
-//!     // Can be stopped at any time when requested.
-//!     runtime.stop().await;
-//! });
 //! ```
 
 pub mod config;
@@ -206,7 +199,7 @@ impl Runtime {
     }
 
     /// Send a message
-    pub async fn send_message(&self, message: String) {
+    pub async fn send_message(&self, message: Vec<u8>) {
         log::trace!(target: "locha-p2p", "sending message");
 
         self.tx
@@ -251,7 +244,7 @@ enum RuntimeAction {
     NetworkInfo(OneshotSender<NetworkInfo>),
     Stop,
     Dial(Multiaddr),
-    SendMessage(String),
+    SendMessage(Vec<u8>),
     ExternalAddresses(OneshotSender<Vec<Multiaddr>>),
     PeerId(OneshotSender<PeerId>),
 }
@@ -299,7 +292,7 @@ async fn task(
                     }
                     RuntimeAction::SendMessage(message) => {
                         if let Err(e) =
-                            swarm.publish(&topic.clone(), message.as_bytes())
+                            swarm.publish(&topic.clone(), message.as_slice())
                         {
                             log::error!(
                                 target: "locha-p2p",
