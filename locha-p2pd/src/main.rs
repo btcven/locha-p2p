@@ -31,18 +31,117 @@ use log::{error, info};
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
+use serde::{Deserialize, Serialize};
+use serde_json;
+use snap::raw::{Decoder, Encoder};
+use std::io::Cursor;
+use prost::Message;
+
 mod arguments;
 use arguments::Arguments;
 
 struct EventsHandler;
 
+pub mod items {
+  include!(concat!(env!("OUT_DIR"), "/message.items.rs"));
+}
+
+#[derive(Serialize, Deserialize)]
+struct Msg {
+    text: String,
+    #[serde(rename = "typeFile")]
+    type_file: Option<String>,
+    file: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct MessageData {
+    #[serde(rename = "toUID")]
+    to_uid: String,
+    #[serde(rename = "msgID")]
+    msg_id: String,
+    timestamp: u64,
+    #[serde(rename = "shippingTime")]
+    shipping_time: Option<u64>,
+    r#type: u32,
+    msg: Msg,
+}
+
+
+pub fn deserialize_message(buf: &[u8]) -> String {
+  let mut decode = Decoder::new();
+  let decompress_bytes =
+      decode.decompress_vec(buf).expect("decompress failed");
+
+  let content: items::Content =
+      items::Content::decode(&mut Cursor::new(&decompress_bytes)).unwrap();
+
+  let message = MessageData {
+      to_uid: content.to_uid,
+      msg_id: content.msg_id,
+      timestamp: content.timestamp,
+      shipping_time: if content.shipping_time == 0 {
+          None
+      } else {
+          Some(content.shipping_time)
+      },
+      r#type: content.type_message,
+      msg: Msg {
+          text: content.text,
+          file: if content.file.is_empty() {
+              None
+          } else {
+              Some(content.file)
+          },
+          type_file: if content.type_file.is_empty() {
+              None
+          } else {
+              Some(content.type_file)
+          },
+      },
+    };
+      
+  return serde_json::to_string(&message).unwrap();
+}
+
+
+pub fn serialize_message(contents: String) -> Vec<u8> {
+  info!("json message {}", contents);
+  let mut message: items::Content = items::Content::default();
+  let json: MessageData =
+      serde_json::from_str(&contents).expect("JSON was not well-formatted");
+
+    message.to_uid = json.to_uid;
+    message.msg_id = json.msg_id;
+    message.timestamp = json.timestamp;
+    message.type_message = json.r#type;
+    message.text = json.msg.text;
+    message.file = json.msg.file.unwrap_or(String::new());
+    message.type_file = json.msg.type_file.unwrap_or(String::new());
+
+
+  let mut buf = Vec::new();
+  buf.reserve(message.encoded_len());
+  message.encode(&mut buf).unwrap();
+  let bytes: &[u8] = &buf;
+
+  let mut encoder = Encoder::new();
+  let compressed_bytes =
+      encoder.compress_vec(bytes).expect("Compression failed");
+
+  compressed_bytes
+}
+
+
 impl RuntimeEvents for EventsHandler {
-    fn on_new_message(&mut self, peer_id: &PeerId, message: String) {
+    fn on_new_message(&mut self, peer_id: &PeerId, message: Vec<u8>) {
         let id = peer_id.to_string();
         info!("Message from ...{}:", &id[id.len() - 8..]);
-        info!("{}", message);
+
+        info!("{:?}", deserialize_message(&message));
     }
 }
+
 
 #[async_std::main]
 async fn main() {
@@ -114,7 +213,8 @@ async fn main() {
         match rl.readline(">>> ") {
             Ok(line) => {
                 if !line.starts_with("/") && !line.is_empty() {
-                    runtime.send_message(line).await;
+                   let compresed_message =  serialize_message(line);
+                    runtime.send_message(compresed_message).await;
                 } else if !line.is_empty() {
                     rl.add_history_entry(line.as_str());
 
