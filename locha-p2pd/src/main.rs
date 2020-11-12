@@ -37,40 +37,16 @@ use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
 use prost::Message;
-use serde::{Deserialize, Serialize};
 use serde_json;
 use snap::raw::{Decoder, Encoder};
 use std::io::Cursor;
 
 mod arguments;
 use arguments::Arguments;
+use locha_p2p::msg::*;
 
 struct EventsHandler;
 
-pub mod items {
-  include!(concat!(env!("OUT_DIR"), "/message.items.rs"));
-}
-
-#[derive(Serialize, Deserialize)]
-struct Msg {
-  text: String,
-  #[serde(rename = "typeFile")]
-  type_file: Option<String>,
-  file: Option<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct MessageData {
-  #[serde(rename = "toUID")]
-  to_uid: String,
-  #[serde(rename = "msgID")]
-  msg_id: String,
-  timestamp: u64,
-  #[serde(rename = "shippingTime")]
-  shipping_time: Option<u64>,
-  r#type: u32,
-  msg: Msg,
-}
 
 pub fn deserialize_message(buf: &[u8]) -> String {
   let mut decode = Decoder::new();

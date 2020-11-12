@@ -42,6 +42,7 @@ fn gossipsub_config() -> GossipsubConfig {
         .protocol_id(CHAT_SERVICE_GOSSIP_PROTCOL_ID)
         .heartbeat_interval(Duration::from_secs(5))
         .message_id_fn(gossipsub_message_id)
+        .max_transmit_size(500000)
         .build()
 }
 
