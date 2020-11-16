@@ -142,7 +142,6 @@ where
     T: RuntimeEvents,
 {
     fn on_new_message(&mut self, peer_id: &PeerId, message: Vec<u8>) {
-
         self.0.on_new_message(peer_id, message)
     }
 
