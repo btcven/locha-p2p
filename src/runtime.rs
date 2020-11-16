@@ -33,8 +33,8 @@
 //! struct EventsHandler;
 //!
 //! impl RuntimeEvents for EventsHandler {
-//!     fn on_new_message(&mut self, peer_id: &PeerId, message: String) {
-//!         println!("new message: {}", message);
+//!     fn on_new_message(&mut self, peer_id: &PeerId, message: Vec<u8>) {
+//!         println!("new message: {:?}", message);
 //!     }
 //! }
 //!
@@ -302,9 +302,7 @@ async fn task(
                         }
                     }
                     RuntimeAction::ExternalAddresses(tx) => {
-                        let addrs: Vec<Multiaddr> = Swarm::external_addresses(&swarm)
-                            .map(|a| a.clone())
-                            .collect();
+                      let addrs = Swarm::external_addresses(&swarm).cloned().collect();
 
                         tx.send(addrs).ok();
                     }

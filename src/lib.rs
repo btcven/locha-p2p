@@ -31,3 +31,4 @@ pub mod upnp;
 pub use libp2p::core::multiaddr::Protocol;
 pub use libp2p::{Multiaddr, PeerId};
 pub use transport::build_transport;
+pub mod msg;
