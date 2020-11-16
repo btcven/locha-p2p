@@ -302,9 +302,7 @@ async fn task(
                         }
                     }
                     RuntimeAction::ExternalAddresses(tx) => {
-                        let addrs: Vec<Multiaddr> = Swarm::external_addresses(&swarm)
-                            .map(|a| a.clone())
-                            .collect();
+                      let addrs = Swarm::external_addresses(&swarm).cloned().collect();
 
                         tx.send(addrs).ok();
                     }
