@@ -34,7 +34,7 @@
 //!
 //! impl RuntimeEvents for EventsHandler {
 //!     fn on_new_message(&mut self, peer_id: &PeerId, message: Vec<u8>) {
-//!         println!("new message: {}", message);
+//!         println!("new message: {:?}", message);
 //!     }
 //! }
 //!
