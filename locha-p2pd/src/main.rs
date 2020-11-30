@@ -70,7 +70,7 @@ pub fn deserialize_message(buf: &[u8]) -> String {
             file: if content.file.is_empty() {
                 None
             } else {
-                Some(content.file)
+                Some(base64::encode(content.file))
             },
             type_file: if content.type_file.is_empty() {
                 None
@@ -118,7 +118,7 @@ pub fn serialize_message(contents: String) -> Vec<u8> {
     message.timestamp = datetime.as_secs();
     message.type_message = 1;
     message.text = text_message;
-    message.file = String::new();
+    message.file = Vec::new();
     message.type_file = String::new();
 
     info!("toUID message {:?}", message);

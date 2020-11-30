@@ -21,10 +21,11 @@ wasm-timer = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 prost = "0.6"
+base64 = "0.13"
+
 # Not available on WASM
 [target.'cfg(not(target_os = "unknown"))'.dependencies]
 miniupnpc = { version = "0.1", path = "miniupnpc" }
-
 
 [build-dependencies]
 prost-build = "0.5"
