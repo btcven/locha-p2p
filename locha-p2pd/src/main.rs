@@ -56,6 +56,7 @@ pub fn deserialize_message(buf: &[u8]) -> String {
         items::Content::decode(&mut Cursor::new(&decompress_bytes)).unwrap();
 
     let message = MessageData {
+        from_uid: content.from_uid,
         to_uid: content.to_uid,
         msg_id: content.msg_id,
         timestamp: content.timestamp,
@@ -109,6 +110,7 @@ pub fn serialize_message(contents: String) -> Vec<u8> {
     let sum_id: String = datetime.as_secs().to_string() + &text_message;
     sha256.input_str(&sum_id);
 
+    message.from_uid = "16Uiu2HAmKXHPfFVEHVWq6PJXGpyQw83D1cmjrBSQGTnsxG2j5zur".to_string();
     message.to_uid = if receiver_id.is_empty() {
         "broadcast".to_string()
     } else {
