@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["locha_p2p"] = [{"text":"impl From&lt;SecretKey&gt; for Identity","synthetic":false,"types":[]},{"text":"impl From&lt;Error&gt; for Error","synthetic":false,"types":[]},{"text":"impl From&lt;TransportError&lt;Error&gt;&gt; for Error","synthetic":false,"types":[]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["Protocol",""]],"fn":[["add_port_mapping","Add port mapping"],["get_connection_type_info","Get connection type information."],["get_external_ip_address","Get External IPv4 address"],["get_status_info","Get status info"]],"struct":[["StatusInfo","UPnP status information"]]});

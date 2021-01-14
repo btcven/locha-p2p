@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["locha_p2p"] = [{"text":"impl NetworkBehaviourEventProcess&lt;MdnsEvent&gt; for Behaviour","synthetic":false,"types":[]},{"text":"impl NetworkBehaviourEventProcess&lt;KademliaEvent&gt; for Behaviour","synthetic":false,"types":[]},{"text":"impl NetworkBehaviourEventProcess&lt;GossipsubEvent&gt; for Behaviour","synthetic":false,"types":[]},{"text":"impl NetworkBehaviourEventProcess&lt;Void&gt; for Behaviour","synthetic":false,"types":[]},{"text":"impl NetworkBehaviourEventProcess&lt;IdentifyEvent&gt; for Behaviour","synthetic":false,"types":[]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

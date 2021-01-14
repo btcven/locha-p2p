@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["miniupnpc"] = [{"text":"impl StructuralEq for Error","synthetic":false,"types":[]},{"text":"impl StructuralEq for LocalPort","synthetic":false,"types":[]},{"text":"impl StructuralEq for Protocol","synthetic":false,"types":[]},{"text":"impl StructuralEq for StatusInfo","synthetic":false,"types":[]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

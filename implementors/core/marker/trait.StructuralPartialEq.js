@@ -1,0 +1,4 @@
+(function() {var implementors = {};
+implementors["locha_p2p"] = [{"text":"impl StructuralPartialEq for Content","synthetic":false,"types":[]}];
+implementors["miniupnpc"] = [{"text":"impl StructuralPartialEq for Error","synthetic":false,"types":[]},{"text":"impl StructuralPartialEq for LocalPort","synthetic":false,"types":[]},{"text":"impl StructuralPartialEq for Protocol","synthetic":false,"types":[]},{"text":"impl StructuralPartialEq for StatusInfo","synthetic":false,"types":[]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

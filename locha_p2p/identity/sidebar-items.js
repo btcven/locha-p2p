@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["SECRET_KEY_LENGTH","Length of a secp256k1 Secret Key in bytes"]],"struct":[["Identity","The identity of a single node."]]});

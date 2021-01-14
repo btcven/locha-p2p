@@ -1,0 +1,4 @@
+(function() {var implementors = {};
+implementors["locha_p2p"] = [{"text":"impl PartialEq&lt;Content&gt; for Content","synthetic":false,"types":[]}];
+implementors["miniupnpc"] = [{"text":"impl PartialEq&lt;Error&gt; for Error","synthetic":false,"types":[]},{"text":"impl PartialEq&lt;LocalPort&gt; for LocalPort","synthetic":false,"types":[]},{"text":"impl PartialEq&lt;Protocol&gt; for Protocol","synthetic":false,"types":[]},{"text":"impl PartialEq&lt;StatusInfo&gt; for StatusInfo","synthetic":false,"types":[]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

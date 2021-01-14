@@ -1,0 +1,5 @@
+(function() {var implementors = {};
+implementors["locha_p2p"] = [{"text":"impl Clone for Identity","synthetic":false,"types":[]},{"text":"impl Clone for Runtime","synthetic":false,"types":[]},{"text":"impl Clone for Content","synthetic":false,"types":[]}];
+implementors["miniupnpc"] = [{"text":"impl Clone for Error","synthetic":false,"types":[]},{"text":"impl Clone for LocalPort","synthetic":false,"types":[]},{"text":"impl Clone for Protocol","synthetic":false,"types":[]},{"text":"impl Clone for StatusInfo","synthetic":false,"types":[]}];
+implementors["miniupnpc_sys"] = [{"text":"impl Clone for IGDdatas_service","synthetic":false,"types":[]},{"text":"impl Clone for IGDdatas","synthetic":false,"types":[]},{"text":"impl Clone for UPNPDev","synthetic":false,"types":[]},{"text":"impl Clone for UPNParg","synthetic":false,"types":[]},{"text":"impl Clone for UPNPUrls","synthetic":false,"types":[]},{"text":"impl Clone for PortMappingParserData","synthetic":false,"types":[]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

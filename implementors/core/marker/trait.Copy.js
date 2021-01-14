@@ -1,0 +1,4 @@
+(function() {var implementors = {};
+implementors["miniupnpc"] = [{"text":"impl Copy for Error","synthetic":false,"types":[]},{"text":"impl Copy for LocalPort","synthetic":false,"types":[]},{"text":"impl Copy for Protocol","synthetic":false,"types":[]}];
+implementors["miniupnpc_sys"] = [{"text":"impl Copy for IGDdatas_service","synthetic":false,"types":[]},{"text":"impl Copy for IGDdatas","synthetic":false,"types":[]},{"text":"impl Copy for UPNPDev","synthetic":false,"types":[]},{"text":"impl Copy for UPNParg","synthetic":false,"types":[]},{"text":"impl Copy for UPNPUrls","synthetic":false,"types":[]},{"text":"impl Copy for PortMappingParserData","synthetic":false,"types":[]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()
