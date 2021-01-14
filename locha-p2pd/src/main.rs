@@ -83,7 +83,7 @@ pub fn deserialize_message(buf: &[u8]) -> String {
     return serde_json::to_string(&message).unwrap();
 }
 
-pub fn serialize_message(contents: String) -> Vec<u8> {
+pub fn serialize_message(contents: String, peer_id: String) -> Vec<u8> {
     let hola: Vec<&str> = contents.trim().split(' ').collect();
 
     let mut receiver_id = String::new();
@@ -110,7 +110,7 @@ pub fn serialize_message(contents: String) -> Vec<u8> {
     let sum_id: String = datetime.as_secs().to_string() + &text_message;
     sha256.input_str(&sum_id);
 
-    message.from_uid = "16Uiu2HAmKXHPfFVEHVWq6PJXGpyQw83D1cmjrBSQGTnsxG2j5zur".to_string();
+    message.from_uid = peer_id;
     message.to_uid = if receiver_id.is_empty() {
         "broadcast".to_string()
     } else {
@@ -211,19 +211,20 @@ async fn main() {
 
     let mut rl = Editor::<()>::new();
     rl.load_history(".locha_p2p_history").ok();
-
+    let peer_id = runtime.peer_id().await;
     loop {
         match rl.readline(">>> ") {
             Ok(line) => {
                 if !line.starts_with("/") && !line.is_empty() {
-                    let compresed_message = serialize_message(line);
+                   
+                    let compresed_message = serialize_message(line, peer_id.to_string());
                     runtime.send_message(compresed_message).await;
                 } else if !line.is_empty() {
                     rl.add_history_entry(line.as_str());
 
                     match line.as_str() {
                         "/id" => {
-                            println!("Peer ID: {}", runtime.peer_id().await);
+                            println!("Peer ID: {}", peer_id);
                         }
                         "/network_info" => {
                             let info = runtime.network_info().await;
