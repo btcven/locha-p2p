@@ -14,6 +14,8 @@ pub struct Msg {
 
 #[derive(Serialize, Deserialize)]
 pub struct MessageData {
+    #[serde(rename = "fromUID")]
+    pub from_uid: String,
     #[serde(rename = "toUID")]
     pub to_uid: String,
     #[serde(rename = "msgID")]
